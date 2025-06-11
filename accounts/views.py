@@ -440,5 +440,3 @@ def api_reset_password(request):
     print(f"Password reset successfully for user {user.username}")
 
     return Response({'message': 'Password reset successful.'}, status=status.HTTP_200_OK)
-
-

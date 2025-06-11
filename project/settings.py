@@ -88,6 +88,7 @@ INSTALLED_APPS = [
     'chatbot',
     'recommendation',
     'upload_center',
+    'tasks',
 ]
 
 MIDDLEWARE = [

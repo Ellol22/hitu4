@@ -3,6 +3,14 @@ from courses.models import Course
 from .models import UploadFile
 from courses.serializers import CourseSerializer  # لو حابب تبعته مع الرد
 
+# students/serializers.py (ضيفه هنا مثلا)
+
+class StudentSubjectFilesSerializer(serializers.Serializer):
+    year = serializers.CharField()
+    semester = serializers.CharField()
+    subject = serializers.CharField()
+    files = serializers.ListField(child=serializers.DictField())
+
 class UploadFileSerializer(serializers.ModelSerializer):
     # لو حابب ترجع بيانات الكورس مع كل ملف مرفوع
     course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all())

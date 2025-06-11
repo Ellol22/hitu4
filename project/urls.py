@@ -31,7 +31,8 @@ urlpatterns = [
     path("chat/", include("chatbot.urls")),  # chatbot
     path("upload/", include("upload_center.urls")),  # upload center
     path("recommend/", include("recommendation.urls")), # recommendation
-    path("grades/", include("grades.urls")) # Grades
+    path("grades/", include("grades.urls")), # Grades
+    path("tasks/", include("tasks.urls")), # Tasks
 ] +static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
