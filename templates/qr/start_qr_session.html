@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Start QR Session</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        select, button { padding: 8px; font-size: 16px; }
+        #qr-display { display: none; margin-top: 30px; }
+        #qr-image { width: 200px; height: 200px; border: 1px solid #ccc; }
+        #timer { font-size: 18px; color: #333; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>📡 Start QR Code Session</h1>
+
+    <form id="start-form" method="post">
+        {% csrf_token %}
+        <label>Choose Lecture:</label>
+        <select name="lecture_id" id="lecture-id" required>
+            {% for lecture in lectures %}
+                <option value="{{ lecture.id }}">{{ lecture.course.name }} - {{ lecture.date }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" id="start-btn">▶️ Start</button>
+    </form>
+
+    <div id="qr-display">
+        <h3>🔄 Current QR Code:</h3>
+        <img id="qr-image" src="" alt="QR Code">
+        <div id="timer">Time Left: <span id="countdown">15:00</span></div>
+    </div>
+
+    <script>
+        let lectureId = null;
+        let qrInterval = null;
+        let countdownInterval = null;
+        let remainingSeconds = 15 * 60;  // 15 دقيقة
+
+        $('#start-form').on('submit', function(e) {
+            e.preventDefault();
+            lectureId = $('#lecture-id').val();
+
+            $('#start-btn').prop('disabled', true);
+
+            $.post("", $(this).serialize(), function(data) {
+                alert("✅ QR session started");
+                $('#qr-display').show();
+                startPolling();
+                startCountdown();
+            }).fail(function(xhr) {
+                $('#start-btn').prop('disabled', false);
+                alert("❌ " + (xhr.responseJSON?.error || "An error occurred"));
+            });
+        });
+
+        function fetchQR() {
+            if (!lectureId) return;
+
+            $.get(`/attendance/qr/latest/${lectureId}/`, function(data) {
+                if (data.image_url) {
+                    $('#qr-image').attr('src', data.image_url + '?t=' + new Date().getTime());
+                }
+            });
+        }
+
+        function startPolling() {
+            fetchQR();
+            if (qrInterval) clearInterval(qrInterval);
+            qrInterval = setInterval(fetchQR, 5000);
+        }
+
+        function startCountdown() {
+            updateCountdownDisplay();
+
+            countdownInterval = setInterval(() => {
+                remainingSeconds--;
+                if (remainingSeconds <= 0) {
+                    clearInterval(countdownInterval);
+                    clearInterval(qrInterval);
+                    $('#qr-display').hide();
+                    alert("🕒 QR session ended");
+                    return;
+                }
+                updateCountdownDisplay();
+            }, 1000);
+        }
+
+        function updateCountdownDisplay() {
+            let minutes = Math.floor(remainingSeconds / 60);
+            let seconds = remainingSeconds % 60;
+            $('#countdown').text(
+                String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0')
+            );
+        }
+    </script>
+</body>
+</html>

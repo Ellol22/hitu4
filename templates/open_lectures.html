@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>📚 المحاضرات المتاحة حالياً</h2>
+    <div id="lectures-container" class="mt-4"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    fetch('/attendance/student/open-lectures/')  // اتأكد أن دا URL بتاعك
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('lectures-container');
+
+            if (data.status !== 'success' || data.open_lectures.length === 0) {
+                container.innerHTML = '<p class="text-muted">لا توجد محاضرات مفتوحة حالياً.</p>';
+                return;
+            }
+
+            data.open_lectures.forEach(lecture => {
+                const card = document.createElement('div');
+                card.className = 'card mb-4 shadow-sm';
+                card.innerHTML = `
+                    <div class="card-body">
+                        <h5 class="card-title">📘 ${lecture.course_name}</h5>
+                        <p class="card-text">📅 التاريخ: ${lecture.lecture_date}</p>
+                        <img src="${lecture.qr_image_url}" alt="QR Code" class="img-thumbnail mb-3" style="max-width: 200px;">
+                        <button class="btn btn-primary" onclick="verifyLocation(${lecture.lecture_id})">✅ حضّرني</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        });
+});
+
+function verifyLocation(lectureId) {
+    if (!navigator.geolocation) {
+        alert("🌍 جهازك لا يدعم تحديد الموقع.");
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(function (position) {
+        const requestData = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            course_id: lectureId,
+            student_structure_id: 123  // 👈 غير دي بعدين لو عايز تخليها ديناميكية
+        };
+
+        fetch('/api/verify-location/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestData)
+        })
+        .then(res => res.json())
+        .then(response => {
+            if (response.inside) {
+                alert(`✅ تم التحقق: انت داخل مبنى ${response.building}.`);
+                // تقدر تضيف هنا طلب تسجيل الحضور لو عايز
+            } else {
+                alert("❌ انت خارج المبنى المحدد. حاول تقرّب أكتر.");
+            }
+        })
+        .catch(error => {
+            console.error('Error verifying location:', error);
+            alert('⚠️ حصل خطأ أثناء التحقق من الموقع.');
+        });
+    });
+}
+</script>
+{% endblock %}

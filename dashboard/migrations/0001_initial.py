@@ -22,7 +22,7 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('title', models.CharField(max_length=200)),
                 ('content', models.TextField()),
-                ('image', models.ImageField(blank=True, null=True, upload_to=dashboard.models.upload_announcement_image)),
+                ('image', models.ImageField(blank=True, null=True, upload_to='')),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('created_by', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
             ],
@@ -31,7 +31,7 @@ class Migration(migrations.Migration):
             name='Dash',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('image', models.ImageField(blank=True, null=True, upload_to=dashboard.models.image_upload)),
+                ('image', models.ImageField(blank=True, null=True, upload_to='')),
                 ('student', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, to='accounts.student')),
             ],
         ),

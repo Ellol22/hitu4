@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from accounts.models import Doctor, Student
 from django.contrib.auth.models import User
+
+from courses.models import Course
 from .models import Announcement
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -21,18 +23,33 @@ class StudentSerializer(serializers.ModelSerializer):
             return None
 
 class DoctorSerializer(serializers.ModelSerializer):
-    username = serializers.CharField(source='user.username', read_only=True)
+    courses = serializers.SerializerMethodField()
     email = serializers.EmailField(source='user.email', read_only=True)
-    first_name = serializers.CharField(source='user.first_name', read_only=True)
-    image = serializers.SerializerMethodField()
+    departments = serializers.SerializerMethodField()
 
     class Meta:
         model = Doctor
-        fields = ['username', 'first_name', 'email', 'name', 'mobile', 'national_id', 'role', 'image']
+        fields = ['name', 'national_id', 'mobile', 'image', 'structures', 'email', 'courses' , 'departments']
+
+    def get_courses(self, obj):
+        return [course.name for course in obj.courses.all()]  # أو أي تمثيل للكورسات
+
+    image = serializers.SerializerMethodField()
 
     def get_image(self, obj):
-        # مفيش image في الموديل Doctor → هنرجع None
-        return None
+        try:
+            return obj.dash.image.url if obj.dash and obj.dash.image else None
+        except:
+            return None
+
+
+    def get_departments(self, obj):
+        return list(set([
+            structure.department.name  # أو structure.department لو عايزة ID
+            for structure in obj.structures.all()
+            if structure.department
+        ]))
+
 
 
 ############################################################################

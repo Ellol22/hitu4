@@ -9,6 +9,7 @@ class LectureSession(models.Model):
     title = models.CharField(max_length=255)  # اسم المحاضرة
     date = models.DateField(default=timezone.now)  # تاريخ المحاضرة
     is_open_for_attendance = models.BooleanField(default=False)  # اختياري لو حابة صراحة اكتر
+    qr_session_started_at = models.DateTimeField(null=True, blank=True)
 
 
     def __str__(self):

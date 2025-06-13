@@ -2,6 +2,8 @@ from django.db import models
 from accounts.models import Student, Doctor  # غيّري المسار لو مش ده المكان
 from django.utils import timezone
 
+from courses.models import Course
+
 class Task(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField()
@@ -9,6 +11,8 @@ class Task(models.Model):
     files = models.FileField(upload_to='tasks/')
     created_by = models.ForeignKey(Doctor, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='tasks')
+
 
     def __str__(self):
         return self.title

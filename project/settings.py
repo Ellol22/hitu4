@@ -38,7 +38,11 @@ CORS_ALLOW_CREDENTIALS = True
 
 # للسماح بكل origins أثناء التطوير:
 CORS_ALLOW_ALL_ORIGINS = True
+SRF_COOKIE_SECURE = False
+SESSION_COOKIE_SECURE = False
 
+# لو شغالة من localhost أو React في دومين مختلف:
+CSRF_TRUSTED_ORIGINS = ['http://localhost:8000', 'http://127.0.0.1:8000']
 
 
 # لو عايز تحدد الهيدرز المسموح بيها:
@@ -59,7 +63,7 @@ CORS_ALLOW_METHODS = [
 ]
 
 
-SITE_DOMAIN = "http://192.168.249.28:8000"
+SITE_DOMAIN = "http://192.168.1.159:8000"
 CSRF_COOKIE_NAME = 'csrftoken'
 
 # Application definition
@@ -108,7 +112,7 @@ ROOT_URLCONF = 'project.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': ["templates"],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [

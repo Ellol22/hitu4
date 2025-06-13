@@ -5,7 +5,7 @@ from structure.models import DepartmentChoices, AcademicYearChoices, SemesterCho
 class Course(models.Model):
     name = models.CharField(max_length=255)  # اسم المادة
     structure = models.ForeignKey(StudentStructure, on_delete=models.CASCADE)
-    doctor = models.ForeignKey(Doctor, on_delete=models.SET_NULL ,blank=True, null=True , limit_choices_to={'role': 'subject_doctor'})  # الدكتور المسؤول
+    doctor = models.ForeignKey(Doctor, on_delete=models.SET_NULL, blank=True, null=True, limit_choices_to={'role': 'subject_doctor'}, related_name='courses')
 
     def __str__(self):
         return f"{self.name} - {self.structure.department} - {self.structure.year} - {self.structure.semester}"

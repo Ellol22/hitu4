@@ -41,6 +41,8 @@ class Doctor(models.Model):
         choices=DoctorRole.choices,
         default=DoctorRole.SUBJECT_DOCTOR
     )
+    structures = models.ManyToManyField('structure.StudentStructure', blank=True)
+
 
     def __str__(self):
         return f"{self.name} ({self.get_role_display()})"

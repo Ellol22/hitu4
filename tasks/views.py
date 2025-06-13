@@ -5,6 +5,7 @@ from rest_framework import status
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from courses.models import Course, StudentCourse
+from courses.serializers import CourseSerializer
 from .models import Task, Submission
 from .serializers import TaskSerializer, SubmissionSerializer
 
@@ -137,3 +138,18 @@ def submission_create(request):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def doctor_courses(request):
+    if not hasattr(request.user, 'doctor'):
+        return Response({"detail": "Only doctors can view their courses."}, status=403)
+
+    doctor = request.user.doctor
+    courses = Course.objects.filter(doctor=doctor)
+    serializer = CourseSerializer(courses, many=True)
+    return Response(serializer.data)

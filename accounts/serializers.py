@@ -27,32 +27,39 @@ class DoctorSerializer(serializers.ModelSerializer):
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        # You can add custom claims here if needed
+        return token
+
     def validate(self, attrs):
         data = super().validate(attrs)
+
         user = self.user
 
-        # تحديد نوع اليوزر
         if hasattr(user, 'student'):
-            data['userType'] = 'Student'
-
-            # لو طالب هضيف البيانات المطلوبة
             student = user.student
-            structure = student.structure
+            structure = getattr(student, 'structure', None)
 
-            data.update({
-                'fullName': student.name,
-                'nationalId': student.national_id,
-                'academicYear': structure.get_year_display() if structure else None,
-                'department': structure.get_department_display() if structure else None,
-            })
+            data['userType'] = 'Student'
+            data['fullName'] = student.name
+            data['nationalId'] = student.national_id
+            data['academicYear'] = structure.get_year_display() if structure else None
+            data['department'] = structure.get_department_display() if structure else None
 
         elif hasattr(user, 'doctor'):
-            data['userType'] = 'Staff'  # أو 'Doctor' حسب ما تفضل
+            doctor = user.doctor
+            data['userType'] = 'Staff'
+            data['fullName'] = doctor.name
+            data['nationalId'] = doctor.national_id
 
-            # لو حابب نضيف بيانات الدكتور كمان ممكن نزود هنا
+            # نرجع كل الأقسام والسنين اللي الدكتور بيدرس فيها
+            structures = doctor.structures.all()
+            data['academicYear'] = [s.get_year_display() for s in structures]
+            data['department'] = [s.get_department_display() for s in structures]
 
         else:
-            data['userType'] = 'Unknown'
+            data['userType'] = 'Other'
 
         return data
-

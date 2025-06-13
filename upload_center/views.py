@@ -20,6 +20,7 @@ def doctor_courses_view(request):
 
     courses = Course.objects.filter(doctor=doctor)
     serializer = CourseSerializer(courses, many=True)
+    print(serializer.data)
     return Response(serializer.data)
 
 

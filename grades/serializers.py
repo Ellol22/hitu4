@@ -7,13 +7,17 @@ from .models import GradeSheet, StudentGrade
 # serializers.py
 
 class StudentGradeSerializer(serializers.ModelSerializer):
+    # بيانات المادة
     subjectName = serializers.CharField(source='grade_sheet.course.name', read_only=True)
     department = serializers.CharField(source='grade_sheet.course.structure.get_department_display', read_only=True)
     year = serializers.CharField(source='grade_sheet.course.structure.get_year_display', read_only=True)
     semester = serializers.CharField(source='grade_sheet.course.structure.get_semester_display', read_only=True)
-    progress = serializers.SerializerMethodField()
+    
+    # بيانات الطالب
+    student_name = serializers.SerializerMethodField()
 
-    # الدرجات الكاملة من الدكتور
+    # درجات الطالب
+    progress = serializers.SerializerMethodField()
     midterm_score_max = serializers.SerializerMethodField()
     section_exam_score_max = serializers.SerializerMethodField()
     year_work_score_max = serializers.SerializerMethodField()
@@ -23,6 +27,7 @@ class StudentGradeSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentGrade
         fields = [
+            'student_name',  # ← أضفنا اسم الطالب هنا
             'subjectName',
             'department',
             'year',
@@ -43,6 +48,10 @@ class StudentGradeSerializer(serializers.ModelSerializer):
             'progress',
         ]
         read_only_fields = fields
+
+    def get_student_name(self, obj):
+        # الاسم الكامل للطالب من العلاقة: Student -> User
+        return obj.student.user.get_full_name() if obj.student and obj.student.user else ""
 
     def get_progress(self, obj):
         return int(obj.percentage) if obj.percentage is not None else 0

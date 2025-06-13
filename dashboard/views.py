@@ -10,16 +10,18 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.response import Response
 from accounts.models import Student, Doctor
 from dashboard.models import Dash
 from dashboard.serializer import StudentSerializer, DoctorSerializer
 
+# dashboard/views.py
+
 @csrf_exempt
 @api_view(['GET', 'POST', 'OPTIONS'])
 @permission_classes([IsAuthenticated])
-@parser_classes([MultiPartParser])
+@parser_classes([MultiPartParser, JSONParser])
 def personal_info(request):
     print("=" * 50)
     print(f"[Personal Info] Incoming {request.method} request")
@@ -29,25 +31,19 @@ def personal_info(request):
     print(f"Files: {request.FILES}")
     print("=" * 50)
 
-    # لو OPTIONS → manual response مظبوط
     if request.method == 'OPTIONS':
-        print("[Personal Info] Handling manual OPTIONS response")
-        response = Response(status=204)  
+        response = Response(status=204)
         response["Access-Control-Allow-Origin"] = "*"
         response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
         response["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
         response["Access-Control-Max-Age"] = "86400"
-        
-        print(f"[Personal Info] Response (204): Manual OPTIONS Response sent.")
         return response
 
-    # الباقي (GET أو POST)
     try:
         user = request.user
         profile_type = None
         profile_instance = None
 
-        # نحاول نجيب الطالب
         try:
             student = Student.objects.get(user=user)
             profile_type = 'student'
@@ -55,7 +51,6 @@ def personal_info(request):
         except Student.DoesNotExist:
             pass
 
-        # لو مش طالب نحاول نجيب الدكتور
         if profile_instance is None:
             try:
                 doctor = Doctor.objects.get(user=user)
@@ -64,10 +59,10 @@ def personal_info(request):
             except Doctor.DoesNotExist:
                 pass
 
-        # لو مفيش طالب ولا دكتور
         if profile_instance is None:
             response_data = {'error': 'Profile not found'}
             response_status = 404
+
         else:
             if request.method == 'GET':
                 if profile_type == 'student':
@@ -80,22 +75,21 @@ def personal_info(request):
                         'email': serializer.data.get('email'),
                         'phone': serializer.data.get('mobile'),
                     }
-                else:  # doctor
+                else:
                     serializer = DoctorSerializer(profile_instance)
                     response_data = {
                         'photo': serializer.data.get('image'),
                         'name': serializer.data.get('name'),
-                        'studentId': serializer.data.get('national_id'),
-                        'department': str(serializer.data.get('department')),
+                        'national_id': serializer.data.get('national_id'),
+                        'departments': serializer.data.get('departments', []),
                         'email': serializer.data.get('email'),
                         'phone': serializer.data.get('mobile'),
+                        'courses': serializer.data.get('courses', []),
                     }
 
                 response_status = 200
 
-
             elif request.method == 'POST':
-                # نفس لوجيك رفع الصورة دلوقتي للطالب والدكتور
                 dash = None
                 if profile_type == 'student':
                     dash, created = Dash.objects.get_or_create(student=profile_instance)
@@ -108,17 +102,14 @@ def personal_info(request):
                     response_data = {'error': 'No image provided'}
                     response_status = 400
                 else:
-                    # لو فيه صورة قديمة → نمسحها
                     if dash.image and dash.image.name:
                         dash.image.delete(save=False)
 
-                    # نحط الصورة الجديدة
                     dash.image = uploaded_image
                     dash.save()
 
                     response_data = {'message': 'Image uploaded successfully'}
                     response_status = 200
-
 
     except Exception as e:
         print(f"[Personal Info] Exception: {str(e)}")
@@ -130,6 +121,8 @@ def personal_info(request):
     print("=" * 50)
 
     return Response(response_data, status=response_status)
+
+
 
 #################################################################################
 

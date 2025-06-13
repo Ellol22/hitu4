@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>📊 Attendance Report</h1>
+
+<form method="post">
+    {% csrf_token %}
+    {% for course in data %}
+        <h2>📘 {{ course.course_name }} - {{ course.structure }}</h2>
+        <div style="overflow-x: auto">
+            <table border="1" cellpadding="5" cellspacing="0">
+                <thead>
+                    <tr>
+                        <th>👤 Student</th>
+                        {% for lec in course.lectures %}
+                            <th>
+                                <input type="text" name="lecture_title_{{ lec.id }}" value="{{ lec.title }}" style="width: 100px;">
+                                <br>
+                                <input type="date" name="lecture_date_{{ lec.id }}" value="{{ lec.date|date:'Y-m-d' }}">
+                            </th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for student in course.students %}
+                        <tr>
+                            <td>{{ student.student_name }}</td>
+                            {% for lec, status in student.attendance_pairs %}
+                                <td style="color: {% if status == 'present' %}green{% else %}red{% endif %};">
+                                    {{ status }}
+                                    <br>
+                                    <select name="attendance_{{ student.student_id }}_{{ lec.id }}">
+                                        <option value="present" {% if status == "present" %}selected{% endif %}>present</option>
+                                        <option value="absent" {% if status == "absent" %}selected{% endif %}>absent</option>
+                                        <option value="late" {% if status == "late" %}selected{% endif %}>late</option>
+                                    </select>
+                                </td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <br><hr><br>
+    {% endfor %}
+    <button type="submit">💾 Save Changes</button>
+</form>
+{% endblock %}
