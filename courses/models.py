@@ -4,7 +4,7 @@ from structure.models import DepartmentChoices, AcademicYearChoices, SemesterCho
 
 class Course(models.Model):
     name = models.CharField(max_length=255)  # اسم المادة
-    structure = models.ForeignKey(StudentStructure, on_delete=models.CASCADE)
+    structure = models.ForeignKey(StudentStructure, on_delete=models.CASCADE , related_name="course_structure")
     doctor = models.ForeignKey(Doctor, on_delete=models.SET_NULL, blank=True, null=True, limit_choices_to={'role': 'subject_doctor'}, related_name='courses')
 
     def __str__(self):
@@ -13,8 +13,8 @@ class Course(models.Model):
 
 # جدول يربط الطالب بالمواد بناءً على هيكل الطالب
 class StudentCourse(models.Model):
-    student = models.ForeignKey(Student, on_delete=models.CASCADE)  # الطالب
-    course = models.ForeignKey(Course, on_delete=models.CASCADE)  # المادة
+    student = models.ForeignKey(Student, on_delete=models.CASCADE , related_name="records")  # الطالب
+    course = models.ForeignKey(Course, on_delete=models.CASCADE ,related_name="stucourses")  # المادة
 
     def __str__(self):
         return f"{self.student.name} - {self.course.name}"
@@ -28,3 +28,4 @@ class CourseSectionAssistant(models.Model):
 
     def __str__(self):
         return f"{self.course.name} - {self.section} - {self.assistant.name}"
+

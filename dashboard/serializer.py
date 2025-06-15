@@ -53,10 +53,58 @@ class DoctorSerializer(serializers.ModelSerializer):
 
 
 ############################################################################
-
+from rest_framework import serializers
+from .models import Announcement
+from accounts.models import Doctor  # أو Student أو User حسب نوع created_by
 
 class AnnouncementSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Announcement
-        fields = '__all__'
-        read_only_fields = ['created_by', 'created_at']
+        fields = '__all__'  # أو عدلها إلى: ['id', 'title', 'content', 'created_at', 'created_by_name']
+        extra_kwargs = {
+            'created_by': {'required': False, 'write_only': True},  # لنرسله أثناء الإنشاء فقط
+            'created_at': {'required': False}
+        }
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return obj.created_by.get_full_name() or obj.created_by.username
+        return None
+
+    def to_internal_value(self, data):
+        # تعديل أسماء الحقول من الفرونت
+        modified_data = data.copy()
+
+        if 'message' in modified_data:
+            modified_data['content'] = modified_data.pop('message')
+        if 'date' in modified_data:
+            modified_data['created_at'] = modified_data.pop('date')
+
+        return super().to_internal_value(modified_data)
+
+
+
+
+
+##################################################################################
+# notifications/serializers.py
+from rest_framework import serializers
+from .models import Notifications
+
+class NotificationSerializer(serializers.ModelSerializer):
+    course = serializers.CharField(source='course.name', read_only=True)
+    sender = serializers.CharField(source='sender.user.get_full_name', read_only=True)
+
+    class Meta:
+        model = Notifications
+        fields = [
+            'id',
+            'title',
+            'message',
+            'created_at',
+            'course',   # يرجّع اسم المادة بدل رقمها
+            'sender',   # يرجّع اسم الدكتور بدل رقمه
+        ]
+

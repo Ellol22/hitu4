@@ -1,42 +1,86 @@
 from django.urls import path
 from . import views
-from .views import login_view 
 
 urlpatterns = [
-    # دكتور: إنشاء محاضرة جديدة
     path('create_lecture/', views.create_lecture_api, name='create_lecture_api'),
-    path('login/', login_view, name='login'),  
-    path('doctor/create-lecture/', views.create_lecture_view, name='create_lecture'), #Html
-    path('qr/start/', views.start_qr_session_page, name='start_qr_page'),#Html
-    path('qr/latest/<int:lecture_id>/', views.get_latest_qr, name='get_latest_qr'),#Html
-    path('doctor/attendance-table/', views.doctor_attendance_table, name='doctor_attendance_table'),
-    path('student/open-lectures/', views.student_open_lectures_page, name='student_open_lectures'),
+    # يستخدمه الدكتور: 
+    # - GET: لجلب قائمة المواد المرتبطة بالدكتور عشان يختار منها لإنشاء محاضرة.
+    # - POST: لإنشاء محاضرة جديدة (بتاخد course_id, lecture_date, lecture_name).
+    # الربط مع Flutter: واجهة الدكتور بتعمل طلب GET لعرض المواد، وطلب POST لإنشاء المحاضرة.
 
+    # path('start_code_session/', views.start_code_session_api, name='start_code_session_api'),
+    # يستخدمه الدكتور: 
+    # - POST: لبدء جلسة حضور جديدة لمحاضرة معينة (بتاخد lecture_id) وتفعيل نظام الكود العشوائي (6 أرقام).
+    # الربط مع Flutter: واجهة الدكتور بترسل طلب POST مع lecture_id عشان تبدأ جلسة الكود.
 
+    path('get_latest_code/<int:lecture_id>/', views.get_latest_code_api, name='get_latest_code_api'),
+    # يستخدمه الدكتور: 
+    # - GET: لجلب آخر كود 6 أرقام مولد لمحاضرة معينة (مع وقت التوليد).
+    # الربط مع Flutter: واجهة الدكتور بتعمل طلب GET كل دقيقة عشان تعرض الكود الجديد للطلاب.
 
+    path('verify_code/', views.verify_code_api, name='verify_code_api'),
+    # يستخدمه الطالب: 
+    # - GET: للتحقق من الكود الـ 6 أرقام اللي الطالب دخله (بتاخد code كـ query parameter).
+    # الربط مع Flutter: واجهة الطالب بترسل الكود المدخل في TextField عشان تتحقق منه.
 
-    # دكتور: توليد رمز QR للمحاضرة (AJAX)
-    path('generate_qr/<int:course_id>/', views.generate_qr_code_ajax, name='generate_qr_ajax'),
+    path('verify_location/', views.verify_location_api, name='verify_location_api'),
+    # يستخدمه الطالب: 
+    # - POST: للتحقق إذا كان الطالب في الموقع الجغرافي الصحيح (بتاخد latitude, longitude, course_id, student_structure_id).
+    # الربط مع Flutter: واجهة الطالب بترسل إحداثيات الموقع بعد التحقق من الكود.
 
-    # طالب: جلب المحاضرات المفتوحة برمز QR فعال
-    path('open_lectures/', views.get_open_lectures_for_student, name='get_open_lectures_for_student'),
-
-    # طالب: التحقق من صحة رمز QR
-    path('verify_qr/', views.verify_qr_code, name='verify_qr'),
-
-    # طالب: التحقق من الموقع الجغرافي (مباني الجامعة)
-    path('verify_location/', views.verify_location, name='verify_location'),
-
-    # طالب: تسجيل الوجه (3 صور)
     path('register_face/', views.register_face_api, name='register_face_api'),
+    # يستخدمه الطالب: 
+    # - POST: لتسجيل الوجه بتاع الطالب (بتاخد 3 صور للوجه لتدريب الموديل).
+    # الربط مع Flutter: واجهة الطالب بترسل الصور التلاتة عشان تسجل بيانات الوجه.
 
-    # طالب: التحقق من الوجه وتسجيل الحضور
     path('verify_face/', views.verify_face_api, name='verify_face_api'),
+    # يستخدمه الطالب: 
+    # - POST: للتحقق من وجه الطالب وتسجيل الحضور (بتاخد lecture_id وصورة الوجه).
+    # الربط مع Flutter: واجهة الطالب بترسل صورة الوجه بعد التحقق من الكود والموقع.
 
-    # الطالب يشوف حضورة قد اي
-    path("student/", views.student_attendance_summary , name="student_attendance_summary"),
+    path('open_lectures/', views.get_open_lectures_for_student, name='get_open_lectures_for_student'),
+    # يستخدمه الطالب: 
+    # - GET: لجلب قائمة المحاضرات المفتوحة للحضور (اللي لسه فيها أكواد نشطة).
+    # الربط مع Flutter: واجهة الطالب بتعمل طلب GET عشان تعرض المحاضرات المتاحة لتسجيل الحضور.
 
-    # فنكشن بترجع كشف كامل للطلبة و كل طالب قدامه حضورة و غيابة 
-    path("doctor/", views.doctor_attendance_overview, name="doctor_attendance_overview"),
+    path('student/', views.student_attendance_summary, name='student_attendance_summary'),
+    # يستخدمه الطالب: 
+    # - GET: لجلب ملخص حضور الطالب في كل المواد (عدد المحاضرات الحاضرها، النسبة، الحالة).
+    # الربط مع Flutter: واجهة الطالب بتعرض الملخص ده في صفحة الحضور بتاعته.
+
+    path('doctor/', views.doctor_attendance_overview, name='doctor_attendance_overview'),
+    # يستخدمه الدكتور: 
+    # - GET: لجلب نظرة عامة على حضور الطلاب في كل المحاضرات لمواد الدكتور.
+    # الربط مع Flutter: واجهة الدكتور بتعرض جدول بكل الطلاب وحضورهم في المحاضرات.
+
+
+
+    # path('create_lecture/', views.create_lecture_api, name='create_lecture_api'),
+
+    # # دكتور: توليد رمز QR للمحاضرة (AJAX)
+    # path('generate_qr/<int:course_id>/', views.generate_qr_code_ajax, name='generate_qr_ajax'),
+
+    # # طالب: جلب المحاضرات المفتوحة برمز QR فعال
+    # path('open_lectures/', views.get_open_lectures_for_student, name='get_open_lectures_for_student'),
+
+    # # طالب: التحقق من صحة رمز QR
+    # path('verify_qr/', views.verify_qr_code, name='verify_qr'),
+
+    # # طالب: التحقق من الموقع الجغرافي (مباني الجامعة)
+    # path('verify_location/', views.verify_location, name='verify_location'),
+
+    # # طالب: تسجيل الوجه (3 صور)
+    # path('register_face/', views.register_face_api, name='register_face_api'),
+
+    # # طالب: التحقق من الوجه وتسجيل الحضور
+    # path('verify_face/', views.verify_face_api, name='verify_face_api'),
+
+    # # الطالب يشوف حضورة قد اي
+    # path("student/", views.student_attendance_summary , name="student_attendance_summary"),
+
+    # # فنكشن بترجع كشف كامل للطلبة و كل طالب قدامه حضورة و غيابة 
+    # path("doctor/", views.doctor_attendance_overview, name="doctor_attendance_overview"),
+
+    # # path('student/', student_attendance_view, name='student-attendance'),
 
 ]

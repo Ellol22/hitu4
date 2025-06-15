@@ -60,10 +60,11 @@ CORS_ALLOW_METHODS = [
     "OPTIONS",
     "PUT",
     "DELETE",
+    "PATCH",
 ]
 
 
-SITE_DOMAIN = "http://192.168.1.159:8000"
+SITE_DOMAIN = "http://192.168.249.28:8000"
 CSRF_COOKIE_NAME = 'csrftoken'
 
 # Application definition
@@ -92,7 +93,9 @@ INSTALLED_APPS = [
     'chatbot',
     'recommendation',
     'upload_center',
-    'tasks',
+    # 'tasks',
+    'quiz',
+    'django_extensions'
 ]
 
 MIDDLEWARE = [

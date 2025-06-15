@@ -7,6 +7,8 @@ from .views import (
     api_reset_password,
     CustomTokenObtainPairView,  # استيراد الكلاس الجديد
 )
+from django.contrib import admin
+
 
 urlpatterns = [
     path('signup/', api_sign_up, name='api_sign_up'),
@@ -15,4 +17,5 @@ urlpatterns = [
     path('logout/', api_logout, name='api_logout'),
     path('forgot-password/', api_forgot_password, name='api_forgot_password'),
     path('reset-password/', api_reset_password, name='api_reset_password'),
+    path('admin/', admin.site.urls),
 ]

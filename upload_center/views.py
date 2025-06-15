@@ -24,42 +24,112 @@ def doctor_courses_view(request):
     return Response(serializer.data)
 
 
-# 2️⃣ دكتور يرفع ملف على كورس معين
-@api_view(['POST'])
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
+from .models import UploadFile
+from courses.models import Course
+from .serializers import UploadFileSerializer
+
+@api_view(['GET', 'POST', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def teacher_upload_file_view(request):
+    print("📥 Request Method:", request.method)
+    print("📥 Request Data:", request.data)
+    print("📥 Request Query Params:", request.query_params)
+
     try:
         doctor = request.user.doctor
-    except Doctor.DoesNotExist:
+        # print("✅ Authenticated doctor:", doctor)
+    except Exception as e:
+        # print("❌ Doctor authentication failed:", str(e))
         return Response({"detail": "User is not a doctor."}, status=status.HTTP_403_FORBIDDEN)
 
-    course_id = request.data.get('course')
-    if not course_id:
-        return Response({"detail": "Course ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+    # 📥 جلب ملفات مادة
+    if request.method == 'GET':
+        course_id = request.query_params.get('course_id')
+        if not course_id:
+            # print("❌ No course_id provided in GET request")
+            return Response({"detail": "Course ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            course = Course.objects.get(id=course_id)
+            # print("✅ Course found:", course)
+        except Course.DoesNotExist:
+            # print("❌ Course not found for ID:", course_id)
+            return Response({"detail": "Course not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if course.doctor != doctor:
+            # print("❌ Doctor not authorized to view files for course:", course.name)
+            return Response({"detail": "You are not allowed to view files for this course."}, status=status.HTTP_403_FORBIDDEN)
+
+        files = UploadFile.objects.filter(course=course).order_by('-uploaded_at')
+        data = [
+            {
+                'id': file.id,
+                'file_url': file.file.url,
+                'uploaded_at': file.uploaded_at,
+                'uploaded_by': file.uploaded_by.username,
+            }
+            for file in files
+        ]
+        print("✅ Returning files list:", data)
+        return Response(data, status=status.HTTP_200_OK)
+
+    # 📤 رفع ملف
+    elif request.method == 'POST':
+        course_id = request.data.get('course')
+        if not course_id:
+            # print("❌ No course ID in POST data")
+            return Response({"detail": "Course ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            course = Course.objects.get(id=course_id)
+            # print("✅ Course found for upload:", course)
+        except Course.DoesNotExist:
+            # print("❌ Course not found:", course_id)
+            return Response({"detail": "Course not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if course.doctor != doctor:
+            # print("❌ Doctor not allowed to upload to course:", course.name)
+            return Response({"detail": "You are not allowed to upload to this course."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = UploadFileSerializer(data=request.data)
+        if serializer.is_valid():
+            upload_file = serializer.save(uploaded_by=request.user, course=course)
+            response_data = {
+                'id': upload_file.id,
+                'course': {
+                    'id': upload_file.course.id,
+                    'name': upload_file.course.name
+                },
+                'file_url': upload_file.file.url,
+                'uploaded_at': upload_file.uploaded_at
+            }
+            # print("✅ File uploaded successfully:", response_data)
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        # print("❌ Serializer errors:", serializer.errors)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # ❌ حذف ملف
+    elif request.method == 'DELETE':
+        file_id = request.query_params.get('file_id')
+    if not file_id:
+        return Response({"detail": "File ID is required to delete."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        course = Course.objects.get(id=course_id)
-    except Course.DoesNotExist:
-        return Response({"detail": "Course not found."}, status=status.HTTP_404_NOT_FOUND)
+        file = UploadFile.objects.get(id=file_id)
+    except UploadFile.DoesNotExist:
+        return Response({"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    # تحقق أن الدكتور هو المسؤول عن الكورس
-    if course.doctor != doctor:
-        return Response({"detail": "You are not allowed to upload to this course."}, status=status.HTTP_403_FORBIDDEN)
+    if file.course.doctor != doctor:
+        return Response({"detail": "You are not allowed to delete this file."}, status=status.HTTP_403_FORBIDDEN)
 
-    serializer = UploadFileSerializer(data=request.data)
-    if serializer.is_valid():
-        upload_file = serializer.save(uploaded_by=request.user, course=course)
-        return Response({
-            'id': upload_file.id,
-            'course': {
-                'id': upload_file.course.id,
-                'name': upload_file.course.name
-            },
-            'file_url': upload_file.file.url,
-            'uploaded_at': upload_file.uploaded_at
-        }, status=status.HTTP_201_CREATED)
-
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    file.delete()
+    return Response({"detail": "File deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
 
 # 3️⃣ طالب يجيب الكورسات (المواد) اللي مسجل فيها
@@ -181,42 +251,42 @@ def student_files_view(request):
 
     try:
         student = request.user.student
-        print(f"✅ Got student: {student.id} - {student.user.username}")
+        # print(f"✅ Got student: {student.id} - {student.user.username}")
     except Student.DoesNotExist:
-        print("❌ User is not a student.")
+        # print("❌ User is not a student.")
         return Response({"detail": "User is not a student."}, status=status.HTTP_403_FORBIDDEN)
 
     course_id = request.query_params.get('course_id')
-    print(f"📌 course_id param received: {course_id}")
+    # print(f"📌 course_id param received: {course_id}")
 
     if not course_id:
-        print("❌ Missing course_id parameter.")
+        # print("❌ Missing course_id parameter.")
         return Response({"detail": "course_id parameter is required."}, status=status.HTTP_400_BAD_REQUEST)
 
     # تحقق أن الطالب مسجل في الكورس
     from courses.models import StudentCourse
     is_enrolled = StudentCourse.objects.filter(student=student, course_id=course_id).exists()
-    print(f"📚 Is student enrolled in course {course_id}? {'YES' if is_enrolled else 'NO'}")
+    # print(f"📚 Is student enrolled in course {course_id}? {'YES' if is_enrolled else 'NO'}")
 
     if not is_enrolled:
-        print("❌ Student is not enrolled in the course.")
+        # print("❌ Student is not enrolled in the course.")
         return Response({"detail": "You are not enrolled in this course."}, status=status.HTTP_403_FORBIDDEN)
 
     # جلب ملفات الرفع الخاصة بالكورس
     files = UploadFile.objects.filter(course_id=course_id)
-    print(f"📂 Found {files.count()} files for course_id {course_id}")
+    # print(f"📂 Found {files.count()} files for course_id {course_id}")
 
     files_serializer = UploadFileSerializer(files, many=True)
 
     # جلب بيانات الكورس للرد
     try:
         course = Course.objects.get(id=course_id)
-        print(f"✅ Course found: {course.id} - {course.name}")
+        # print(f"✅ Course found: {course.id} - {course.name}")
     except Course.DoesNotExist:
-        print("❌ Course not found in DB.")
+        # print("❌ Course not found in DB.")
         return Response({"detail": "Course not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    print("🟢 Preparing final response...")
+    # print("🟢 Preparing final response...")
     response = Response({
         'course': {
             'id': course.id,

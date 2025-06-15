@@ -9,7 +9,7 @@ class Student(models.Model):
     mobile =models.CharField(max_length=11 , blank=True , null=True)
     national_id =models.CharField(max_length=14)
     sec_num = models.IntegerField(null=True, blank=True)
-    structure = models.ForeignKey(StudentStructure, on_delete=models.SET_NULL, null=True, blank=True)
+    structure = models.ForeignKey(StudentStructure, on_delete=models.SET_NULL, null=True, blank=True , related_name="student_structure")
 
     def __str__ (self):
         return (self.name)
@@ -41,7 +41,7 @@ class Doctor(models.Model):
         choices=DoctorRole.choices,
         default=DoctorRole.SUBJECT_DOCTOR
     )
-    structures = models.ManyToManyField('structure.StudentStructure', blank=True)
+    structures = models.ManyToManyField('structure.StudentStructure', blank=True ,related_name="doctor_structure")
 
 
     def __str__(self):
@@ -49,6 +49,5 @@ class Doctor(models.Model):
 
     def get_my_courses(self):
         from courses.models import Course
-        return Course.objects.filter(
-            id__in=self.course_assignments.values_list('course_id', flat=True)
-        )
+        return Course.objects.filter(doctor=self)
+

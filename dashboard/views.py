@@ -135,48 +135,184 @@ from .serializer import AnnouncementSerializer
 from django.shortcuts import get_object_or_404
 from accounts.models import DoctorRole
 
+from django.utils import timezone
+from django.contrib.auth.models import User
+
 @api_view(['GET', 'POST', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
-def announcement_api(request):
-    # 1. الطالب أو أي يوزر يقدر يعمل GET
+def announcement_api(request ,id=None):
+    print(f"📥 Incoming {request.method} Request: {request.data}")
+
     if request.method == 'GET':
-        announcements = Announcement.objects.all().order_by('-created_at')
-        serializer = AnnouncementSerializer(announcements, many=True)
-        return Response(serializer.data)
+        if id is not None:
+            announcement = get_object_or_404(Announcement, id=id)
+            serializer = AnnouncementSerializer(announcement)
+            return Response(serializer.data)
+        else:
+            announcements = Announcement.objects.all().order_by('-created_at')
+            serializer = AnnouncementSerializer(announcements, many=True)
+            return Response(serializer.data)
 
-    # بعد كده كل العمليات (POST, PUT, DELETE) محتاجة صلاحية
 
-    # هل اليوزر دكتور؟
     try:
         doctor = request.user.doctor
     except:
+        print("🚫 Not a doctor.")
         return Response({"detail": "Only doctors can perform this action."}, status=403)
 
-    # لو معيد → ماينفعش يعمل POST/PUT/DELETE
     if doctor.role == DoctorRole.TEACHING_ASSISTANT:
+        print("🚫 Teaching assistant tried modifying announcement.")
         return Response({"detail": "Teaching assistants can only view announcements."}, status=403)
 
-    # 2. دكتور إداري أو دكتور مادة بيضيف إعلان جديد
+
     if request.method == 'POST':
-        serializer = AnnouncementSerializer(data=request.data)
+        # 🔒 معالجة البيانات بأمان
+        if isinstance(request.data, dict):
+            data = request.data.copy()
+        else:
+            import json
+            try:
+                data = json.loads(request.data)
+            except json.JSONDecodeError:
+                return Response({"detail": "Invalid JSON format."}, status=400)
+
+        serializer = AnnouncementSerializer(data=data)
         if serializer.is_valid():
+            # ✅ ربط الإعلان بالمستخدم اللي عامل الطلب
             serializer.save(created_by=request.user)
+            print(f"✅ Created Announcement: {serializer.data}")
             return Response(serializer.data, status=201)
+
+        print(f"❌ Invalid Data: {serializer.errors}")
         return Response(serializer.errors, status=400)
 
-    # 3. دكتور إداري أو دكتور مادة بيعدل إعلان
+    # لو عايزة تعملي GET بعدين حطيه هنا
+
+
+
     elif request.method == 'PUT':
-        announcement_id = request.data.get('id')
-        announcement = get_object_or_404(Announcement, id=announcement_id, created_by=request.user)
-        serializer = AnnouncementSerializer(announcement, data=request.data, partial=True)
+        if not id:
+            return Response({"detail": "ID is required for update."}, status=400)
+
+        announcement = get_object_or_404(Announcement, id=id, created_by=request.user)
+        data = request.data.copy()
+
+        if not data.get('created_by'):
+            data['created_by'] = request.user.id
+        if not data.get('created_at'):
+            data['created_at'] = announcement.created_at
+
+        serializer = AnnouncementSerializer(announcement, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            print(f"✏️ Updated Announcement: {serializer.data}")
+            return Response(serializer.data)
+        print(Announcement.objects.filter(id=id))  # هل الإعلان موجود؟
+        print(Announcement.objects.filter(id=id, created_by=request.user))  # هل الدكتور اللي طالب التعديل هو اللي عمله؟
+        print(f"❌ Update Error: {serializer.errors}")
+        return Response(serializer.errors, status=400)
+
+    elif request.method == 'DELETE':
+        if not id:
+            return Response({"detail": "ID is required for deletion."}, status=400)
+
+        announcement = get_object_or_404(Announcement, id=id, created_by=request.user)
+        announcement.delete()
+        print(f"🗑️ Deleted Announcement ID {id}")
+        return Response({'message': 'Deleted successfully.'})
+
+    
+#################################################################################
+#notification
+# notifications/views.py
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from .serializer import NotificationSerializer
+from .models import Notifications
+from accounts.models import Doctor
+import json
+
+@api_view(['GET', 'POST', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def send_notification(request, id=None):
+    import json
+    from .models import Notifications
+    from .serializer import NotificationSerializer
+
+    # ✅ تأكد إن المستخدم دكتور
+    try:
+        doctor = Doctor.objects.get(user=request.user)
+    except Doctor.DoesNotExist:
+        return Response({'detail': 'Current user is not a Doctor.'}, status=403)
+
+    # ✅ GET
+    if request.method == 'GET':
+        if id is not None:
+            notification = get_object_or_404(Notifications, id=id, sender=doctor)
+            serializer = NotificationSerializer(notification)
+            return Response(serializer.data)
+        else:
+            notifications = Notifications.objects.filter(sender=doctor).order_by('-created_at')
+            serializer = NotificationSerializer(notifications, many=True)
+            return Response(serializer.data)
+
+    # ✅ POST
+    if request.method == 'POST':
+        data = request.data.copy() if isinstance(request.data, dict) else json.loads(request.data)
+        data['sender'] = doctor.id
+
+        serializer = NotificationSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+
+        return Response(serializer.errors, status=400)
+
+    # ✅ PUT (تعديل نوتيفيكيشن)
+    if request.method == 'PUT':
+        if not id:
+            return Response({'detail': 'Notification ID required in URL.'}, status=400)
+
+        notification = get_object_or_404(Notifications, id=id, sender=doctor)
+
+        data = request.data.copy() if isinstance(request.data, dict) else json.loads(request.data)
+        data['sender'] = doctor.id
+
+        serializer = NotificationSerializer(notification, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
+
         return Response(serializer.errors, status=400)
 
-    # 4. دكتور إداري أو دكتور مادة بيحذف إعلان
-    elif request.method == 'DELETE':
-        announcement_id = request.data.get('id')
-        announcement = get_object_or_404(Announcement, id=announcement_id, created_by=request.user)
-        announcement.delete()
-        return Response({'message': 'Deleted successfully.'})
+    # ✅ DELETE
+    if request.method == 'DELETE':
+        if not id:
+            return Response({'detail': 'Notification ID required in URL.'}, status=400)
+
+        notification = get_object_or_404(Notifications, id=id, sender=doctor)
+        notification.delete()
+        return Response({'detail': 'Notification deleted successfully.'}, status=200)
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def student_notifications(request):
+    from accounts.models import Student
+    from courses.models import StudentCourse
+
+    try:
+        student = Student.objects.get(user=request.user)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Current user is not a student.'}, status=403)
+
+    # ✅ جيبي المواد اللي الطالب مشترك فيها
+    student_courses = StudentCourse.objects.filter(student=student).values_list('course', flat=True)
+
+    # ✅ جيبي النوتيفيكيشنز المرتبطة بالمواد دي
+    notifications = Notifications.objects.filter(course__in=student_courses).order_by('-created_at')
+
+    serializer = NotificationSerializer(notifications, many=True)
+    return Response(serializer.data)

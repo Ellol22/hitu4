@@ -6,8 +6,8 @@ from accounts.models import Student, Doctor
 from courses.models import Course
 
 class GradeSheet(models.Model):
-    course = models.OneToOneField(Course, on_delete=models.CASCADE)
-    doctor = models.ForeignKey(Doctor, on_delete=models.SET_NULL, null=True, blank=True)
+    course = models.OneToOneField(Course, on_delete=models.CASCADE,related_name="courses")
+    doctor = models.ForeignKey(Doctor, on_delete=models.SET_NULL, null=True, blank=True,related_name="teacher")
     full_score = models.FloatField(default=100)
 
     final_exam_full_score = models.FloatField(default=50)

@@ -14,11 +14,11 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='announcement',
             name='image',
-            field=models.ImageField(blank=True, null=True, upload_to=dashboard.models.upload_announcement_image),
+            field=models.ImageField(blank=True, null=True, upload_to="/"),
         ),
         migrations.AlterField(
             model_name='dash',
             name='image',
-            field=models.ImageField(blank=True, null=True, upload_to=dashboard.models.dynamic_image_upload),
+            field=models.ImageField(blank=True, null=True, upload_to="/"),
         ),
     ]

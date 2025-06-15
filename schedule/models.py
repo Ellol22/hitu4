@@ -10,13 +10,13 @@ class LectureTypeChoices(models.TextChoices):
 
 class Schedule(models.Model):
     student_structure = models.ForeignKey(StudentStructure, on_delete=models.CASCADE, related_name='schedules')
-    course = models.ForeignKey(Course, on_delete=models.CASCADE)  # << ربط بكورس حقيقي
+    course = models.ForeignKey(Course, on_delete=models.CASCADE,related_name="subject")  # << ربط بكورس حقيقي
     day = models.CharField(max_length=10)
     slot_number = models.PositiveIntegerField()
     start_time = models.TimeField()
     end_time = models.TimeField()
     section = models.CharField(max_length=10)  # e.g. "All" or "Sec 1", "Sec 2"
-    instructor = models.ForeignKey(Doctor, on_delete=models.SET_NULL, null=True, blank=True)
+    instructor = models.ForeignKey(Doctor, on_delete=models.SET_NULL, null=True, blank=True,related_name="doc")
     room = models.CharField(max_length=10)
     type = models.CharField(
         max_length=10,

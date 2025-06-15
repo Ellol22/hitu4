@@ -35,33 +35,40 @@ def my_grades(request):
         status=status.HTTP_403_FORBIDDEN
     )
 
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.core.exceptions import ValidationError
+from .models import Course, GradeSheet, StudentGrade, Student
+from .serializers import StudentGradeSerializer
+
+
 @api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def manage_course_grades(request, course_name):
     user = request.user
 
-    if not is_doctor(user):
-        response = {"detail": "You do not have access permission."}
-        print("[Response]:", response)
-        return Response(response, status=status.HTTP_403_FORBIDDEN)
+    # التأكد من أن المستخدم لديه علاقة بدكتور
+    try:
+        doctor = user.doctor
+    except AttributeError:
+        return Response({"detail": "Only doctors are allowed to access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
 
-    doctor = user.doctor
-
+    # التأكد من أن الدكتور مسؤول عن هذه المادة
     try:
         course = Course.objects.get(name=course_name, doctor=doctor)
     except Course.DoesNotExist:
-        response = {"detail": "Course not found or not assigned to you."}
-        print("[Response]:", response)
-        return Response(response, status=status.HTTP_404_NOT_FOUND)
+        return Response({"detail": "Course not found or not assigned to you."}, status=status.HTTP_404_NOT_FOUND)
 
+    # التأكد من وجود ورقة درجات للمادة
     try:
         grade_sheet = GradeSheet.objects.get(course=course)
     except GradeSheet.DoesNotExist:
-        response = {"detail": "No grade sheet for this course."}
-        print("[Response]:", response)
-        return Response(response, status=status.HTTP_404_NOT_FOUND)
+        return Response({"detail": "No grade sheet for this course."}, status=status.HTTP_404_NOT_FOUND)
 
-    # -------- GET: عرض درجات كل الطلبة --------
+    # ----------- GET: عرض درجات كل الطلبة -----------
     if request.method == 'GET':
         student_grades = StudentGrade.objects.filter(grade_sheet=grade_sheet)
         serializer = StudentGradeSerializer(student_grades, many=True)
@@ -74,16 +81,18 @@ def manage_course_grades(request, course_name):
             'year_work_full_score': grade_sheet.year_work_full_score,
         }
 
-        response = {
+        return Response({
             'grade_sheet': grade_sheet_data,
             'student_grades': serializer.data
-        }
-        print("[GET Response]:", response)
-        return Response(response)
+        })
 
-    # -------- PATCH: تعديل GradeSheet أو درجات طالب --------
+    # ----------- PATCH: تعديل ورقة الدرجات أو درجات طالب معين -----------
     elif request.method == 'PATCH':
-        if request.data.get('update_gradesheet'):
+        data = request.data
+        print(data)
+
+        # تحديث إعدادات ورقة الدرجات
+        if data.get('update_gradesheet'):
             allowed_fields = [
                 'full_score',
                 'final_exam_full_score',
@@ -92,45 +101,38 @@ def manage_course_grades(request, course_name):
                 'year_work_full_score'
             ]
             for field in allowed_fields:
-                if field in request.data:
-                    setattr(grade_sheet, field, request.data[field])
+                if field in data:
+                    setattr(grade_sheet, field, data[field])
+
             try:
                 grade_sheet.save()
-                response = {"detail": "GradeSheet updated successfully."}
-                print("[PATCH GradeSheet Response]:", response)
-                return Response(response)
+                return Response({"detail": "Grade sheet updated successfully."})
             except ValidationError as e:
-                response = {"detail": str(e)}
-                print("[PATCH GradeSheet Error]:", response)
-                return Response(response, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        username = request.data.get('username')
-        if not username:
-            response = {"detail": "username is required."}
-            print("[PATCH Missing Username]:", response)
-            return Response(response, status=status.HTTP_400_BAD_REQUEST)
+        # تحديث درجات طالب
+        student_name = data.get('student_name')
+        if not student_name:
+            return Response({"detail": "Field 'student_name' is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            student = Student.objects.get(user__username=username)
+            student = Student.objects.get(name__iexact=student_name)
         except Student.DoesNotExist:
-            response = {"detail": "Student not found."}
-            print("[PATCH Student Not Found]:", response)
-            return Response(response, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "Student not found with this name."}, status=status.HTTP_404_NOT_FOUND)
 
-        student_grade, created = StudentGrade.objects.get_or_create(
+        student_grade, _ = StudentGrade.objects.get_or_create(
             grade_sheet=grade_sheet,
             student=student
         )
 
-        serializer = StudentGradeSerializer(student_grade, data=request.data, partial=True)
+        serializer = StudentGradeSerializer(student_grade, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            print("[PATCH Student Grade Updated]:", serializer.data)
+            print(serializer.data)
             return Response(serializer.data)
+            
 
-        print("[PATCH Student Grade Error]:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

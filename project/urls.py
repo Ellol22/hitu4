@@ -32,7 +32,7 @@ urlpatterns = [
     path("upload/", include("upload_center.urls")),  # upload center
     path("recommend/", include("recommendation.urls")), # recommendation
     path("grades/", include("grades.urls")), # Grades
-    path("tasks/", include("tasks.urls")), # Tasks
+    path("", include("quiz.urls")) # quiz Doctor
 ] +static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

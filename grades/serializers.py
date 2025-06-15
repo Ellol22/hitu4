@@ -12,11 +12,11 @@ class StudentGradeSerializer(serializers.ModelSerializer):
     department = serializers.CharField(source='grade_sheet.course.structure.get_department_display', read_only=True)
     year = serializers.CharField(source='grade_sheet.course.structure.get_year_display', read_only=True)
     semester = serializers.CharField(source='grade_sheet.course.structure.get_semester_display', read_only=True)
-    
+
     # بيانات الطالب
     student_name = serializers.SerializerMethodField()
 
-    # درجات الطالب
+    # درجات محسوبة (غير قابلة للتعديل)
     progress = serializers.SerializerMethodField()
     midterm_score_max = serializers.SerializerMethodField()
     section_exam_score_max = serializers.SerializerMethodField()
@@ -27,7 +27,7 @@ class StudentGradeSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentGrade
         fields = [
-            'student_name',  # ← أضفنا اسم الطالب هنا
+            'student_name',
             'subjectName',
             'department',
             'year',
@@ -47,10 +47,25 @@ class StudentGradeSerializer(serializers.ModelSerializer):
             'is_passed',
             'progress',
         ]
-        read_only_fields = fields
+        read_only_fields = [
+            'student_name',
+            'subjectName',
+            'department',
+            'year',
+            'semester',
+            'midterm_score_max',
+            'section_exam_score_max',
+            'year_work_score_max',
+            'final_exam_score_max',
+            'total_score',
+            'total_score_max',
+            'letter_grade',
+            'percentage',
+            'is_passed',
+            'progress',
+        ]
 
     def get_student_name(self, obj):
-        # الاسم الكامل للطالب من العلاقة: Student -> User
         return obj.student.user.get_full_name() if obj.student and obj.student.user else ""
 
     def get_progress(self, obj):
