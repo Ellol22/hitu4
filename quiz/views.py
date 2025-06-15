@@ -191,3 +191,5 @@ def staff_quizzes_notify(request):
         return Response({"detail": "Notification sent successfully."}, status=status.HTTP_200_OK)
     except ObjectDoesNotExist:
         return Response({"detail": "Quiz or course not found."}, status=status.HTTP_404_NOT_FOUND)
+    
+

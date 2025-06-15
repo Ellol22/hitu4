@@ -233,20 +233,26 @@ from .models import Notifications
 from accounts.models import Doctor
 import json
 
+# notifications/views.py
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+import json
+from .models import Notifications
+from .serializer import NotificationSerializer
+from accounts.models import Doctor
+from courses.models import Course
+
 @api_view(['GET', 'POST', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def send_notification(request, id=None):
-    import json
-    from .models import Notifications
-    from .serializer import NotificationSerializer
-
-    # ✅ تأكد إن المستخدم دكتور
+    # Verify the user is a doctor
     try:
         doctor = Doctor.objects.get(user=request.user)
     except Doctor.DoesNotExist:
         return Response({'detail': 'Current user is not a Doctor.'}, status=403)
 
-    # ✅ GET
     if request.method == 'GET':
         if id is not None:
             notification = get_object_or_404(Notifications, id=id, sender=doctor)
@@ -257,10 +263,31 @@ def send_notification(request, id=None):
             serializer = NotificationSerializer(notifications, many=True)
             return Response(serializer.data)
 
-    # ✅ POST
     if request.method == 'POST':
         data = request.data.copy() if isinstance(request.data, dict) else json.loads(request.data)
         data['sender'] = doctor.id
+
+        # استخرج قيمة course سواء كانت id أو name
+        course_identifier = data.get('course')
+        if not course_identifier:
+            return Response({'detail': 'Course is required (id or name).'}, status=400)
+
+        try:
+            # لو اللي جاي رقم، اعتبره ID، غير كده دور على الاسم
+            if str(course_identifier).isdigit():
+                course = Course.objects.get(id=course_identifier)
+            else:
+                course = Course.objects.get(name=course_identifier)
+
+            # تحقق إن الدكتور فعلاً مسؤول عن المادة
+            if not doctor.courses.filter(id=course.id).exists():
+                return Response({'detail': 'You are not authorized to send notifications for this course.'}, status=403)
+
+            # عدّل قيمة course في البيانات بالـ id الصحيح
+            data['course'] = course.id
+
+        except Course.DoesNotExist:
+            return Response({'detail': 'Course not found.'}, status=400)
 
         serializer = NotificationSerializer(data=data)
         if serializer.is_valid():
@@ -269,28 +296,32 @@ def send_notification(request, id=None):
 
         return Response(serializer.errors, status=400)
 
-    # ✅ PUT (تعديل نوتيفيكيشن)
+
     if request.method == 'PUT':
         if not id:
             return Response({'detail': 'Notification ID required in URL.'}, status=400)
-
         notification = get_object_or_404(Notifications, id=id, sender=doctor)
-
         data = request.data.copy() if isinstance(request.data, dict) else json.loads(request.data)
         data['sender'] = doctor.id
+
+        # Validate course authorization for updates
+        course_id = data.get('course', notification.course.id)
+        try:
+            course = Course.objects.get(id=course_id)
+            if not doctor.courses.filter(id=course_id).exists():
+                return Response({'detail': 'You are not authorized to send notifications for this course.'}, status=403)
+        except Course.DoesNotExist:
+            return Response({'detail': 'Invalid course ID.'}, status=400)
 
         serializer = NotificationSerializer(notification, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
-
         return Response(serializer.errors, status=400)
 
-    # ✅ DELETE
     if request.method == 'DELETE':
         if not id:
             return Response({'detail': 'Notification ID required in URL.'}, status=400)
-
         notification = get_object_or_404(Notifications, id=id, sender=doctor)
         notification.delete()
         return Response({'detail': 'Notification deleted successfully.'}, status=200)

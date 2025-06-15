@@ -119,3 +119,5 @@ class AssignmentSerializer(serializers.ModelSerializer):
             for file in files_data:
                 AssignmentFile.objects.create(assignment=instance, file=file)
         return instance
+    
+

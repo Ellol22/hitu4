@@ -63,6 +63,16 @@ CORS_ALLOW_METHODS = [
     "PATCH",
 ]
 
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),      # 🟢 عدليها حسب المطلوب
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),         # 🟢 ممكن 1 يوم أو أكثر
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
 
 SITE_DOMAIN = "http://192.168.249.28:8000"
 CSRF_COOKIE_NAME = 'csrftoken'

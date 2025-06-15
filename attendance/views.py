@@ -448,12 +448,16 @@ def verify_face_api(request):
 
     return Response({'status': 'success', 'message': 'Attendance marked successfully.'}, status=status.HTTP_200_OK)
 
+from structure.models import StudentStructure
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_open_lectures_for_student(request):
     """جلب المحاضرات المفتوحة للطالب"""
     try:
         student = request.user.student
+
+        # الحصول على الهيكل الدراسي للطالب
+        student_structure = StudentStructure.objects.get(student=student)
 
         enrolled_courses_ids = StudentCourse.objects.filter(
             student=student
@@ -476,7 +480,7 @@ def get_open_lectures_for_student(request):
             schedule = Schedule.objects.filter(
                 course=course,
                 day=today_weekday,
-                student_structure__student=student
+                student_structure=student_structure  # ✅ هو ده المفتاح
             ).first()
 
             open_lectures.append({
@@ -493,11 +497,19 @@ def get_open_lectures_for_student(request):
             'open_lectures': open_lectures
         }, status=status.HTTP_200_OK)
 
+    except StudentStructure.DoesNotExist:
+        return Response({
+            'status': 'error',
+            'message': 'الطالب غير مرتبط بأي هيكل دراسي'
+        }, status=status.HTTP_404_NOT_FOUND)
+
     except Exception as e:
         return Response({
             'status': 'error',
             'message': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

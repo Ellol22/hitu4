@@ -4,6 +4,7 @@ from .views import (
     staff_assignments, staff_assignment_detail, staff_quizzes_notify
 )
 
+
 urlpatterns = [
     path('staff/courses/', staff_courses, name='staff-courses'),
     path('staff/quizzes/', staff_quizzes, name='staff-quizzes'),

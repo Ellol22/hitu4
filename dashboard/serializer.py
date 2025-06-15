@@ -107,4 +107,3 @@ class NotificationSerializer(serializers.ModelSerializer):
             'course',   # يرجّع اسم المادة بدل رقمها
             'sender',   # يرجّع اسم الدكتور بدل رقمه
         ]
-

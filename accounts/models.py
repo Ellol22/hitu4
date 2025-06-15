@@ -23,6 +23,25 @@ class Student(models.Model):
                 semester=self.structure.semester
             )
         return Course.objects.none()
+    
+    # في models.py داخل Student
+
+from collections import defaultdict
+
+def get_all_department_courses_grouped(self):
+    from courses.models import Course
+    if not self.structure:
+        return {}
+
+    courses = Course.objects.filter(structure__department=self.structure.department)
+    grouped = defaultdict(list)
+
+    for course in courses:
+        key = f"{course.structure.year} - {course.structure.semester}"
+        grouped[key].append(course)
+
+    return dict(grouped)
+
 
 class DoctorRole(models.TextChoices):
     SUBJECT_DOCTOR = 'subject_doctor', 'دكتور مادة'

@@ -8,4 +8,5 @@ urlpatterns = [
     path('notification/', send_notification, name='notification-list'),                  # GET, POST
     path('notification/<int:id>/', send_notification, name='notification-detail'),       # GET (واحدة), PUT, DELETE
     path('notification/student/', student_notifications, name='student-notifications'),
+
 ]
