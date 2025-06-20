@@ -13,7 +13,7 @@ class Course(models.Model):
 
 # جدول يربط الطالب بالمواد بناءً على هيكل الطالب
 class StudentCourse(models.Model):
-    student = models.ForeignKey(Student, on_delete=models.CASCADE , related_name="records")  # الطالب
+    student = models.ForeignKey(Student, on_delete=models.CASCADE , related_name='student_courses')  # الطالب
     course = models.ForeignKey(Course, on_delete=models.CASCADE ,related_name="stucourses")  # المادة
 
     def __str__(self):

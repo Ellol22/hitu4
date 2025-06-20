@@ -89,13 +89,23 @@ class AnnouncementSerializer(serializers.ModelSerializer):
 
 
 ##################################################################################
-# notifications/serializers.py
 from rest_framework import serializers
 from .models import Notifications
+from courses.models import Course
 
 class NotificationSerializer(serializers.ModelSerializer):
+    # 📥 حقل كتابة: إدخال course ID
+    course_id = serializers.PrimaryKeyRelatedField(
+        queryset=Course.objects.all(),
+        source='course',
+        write_only=True
+    )
+
+    # 📤 حقل قراءة: اسم المادة
     course = serializers.CharField(source='course.name', read_only=True)
-    sender = serializers.CharField(source='sender.user.get_full_name', read_only=True)
+
+    # 📤 حقل قراءة: اسم الدكتور بالكامل (من User المرتبط)
+    sender = serializers.CharField(source='sender.user.username', read_only=True)
 
     class Meta:
         model = Notifications
@@ -104,6 +114,8 @@ class NotificationSerializer(serializers.ModelSerializer):
             'title',
             'message',
             'created_at',
-            'course',   # يرجّع اسم المادة بدل رقمها
-            'sender',   # يرجّع اسم الدكتور بدل رقمه
+            'course_id',  # input فقط
+            'course',     # output فقط (name)
+            'sender',     # output فقط
         ]
+

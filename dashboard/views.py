@@ -265,36 +265,35 @@ def send_notification(request, id=None):
 
     if request.method == 'POST':
         data = request.data.copy() if isinstance(request.data, dict) else json.loads(request.data)
-        data['sender'] = doctor.id
+        print("🔵 Incoming Request Data (Before Cleaning):", data)
 
-        # استخرج قيمة course سواء كانت id أو name
-        course_identifier = data.get('course')
-        if not course_identifier:
-            return Response({'detail': 'Course is required (id or name).'}, status=400)
+        # ✅ احذفي أي قيمة جاية في sender لو اتبعت غلط من الفرونت
+        data.pop('sender', None)
+
+        course_id = data.get('course_id')
+        if not course_id:
+            print("🔴 Missing course_id in request.")
+            return Response({'detail': 'course_id is required.'}, status=400)
 
         try:
-            # لو اللي جاي رقم، اعتبره ID، غير كده دور على الاسم
-            if str(course_identifier).isdigit():
-                course = Course.objects.get(id=course_identifier)
-            else:
-                course = Course.objects.get(name=course_identifier)
-
-            # تحقق إن الدكتور فعلاً مسؤول عن المادة
+            course = Course.objects.get(id=course_id)
             if not doctor.courses.filter(id=course.id).exists():
+                print(f"🔴 Doctor not authorized for course ID {course.id}")
                 return Response({'detail': 'You are not authorized to send notifications for this course.'}, status=403)
-
-            # عدّل قيمة course في البيانات بالـ id الصحيح
-            data['course'] = course.id
-
         except Course.DoesNotExist:
+            print(f"🔴 Course not found: {course_id}")
             return Response({'detail': 'Course not found.'}, status=400)
 
         serializer = NotificationSerializer(data=data)
         if serializer.is_valid():
-            serializer.save()
+            # ✅ ربط الدكتور كـ sender تلقائيًا
+            serializer.save(sender=doctor)
+            print("✅ Notification created:", serializer.data)
             return Response(serializer.data, status=201)
 
+        print("🔴 Serializer Errors:", serializer.errors)
         return Response(serializer.errors, status=400)
+
 
 
     if request.method == 'PUT':
