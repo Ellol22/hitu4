@@ -1,85 +1,127 @@
 from rest_framework import serializers
-from .models import Quiz, QuizQuestion, Assignment, AssignmentFile
-from django.utils import timezone
+from .models import Quiz, QuizQuestion, Assignment, AssignmentFile, QuizSubmission, Submission
 from courses.models import Course
-from datetime import datetime
+from accounts.models import Student
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from django.utils.timezone import now, localtime
+import pytz
 
+# ----------------------------
+# Quiz Question Serializer
+# ----------------------------
 class QuizQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = QuizQuestion
-        fields = ['id', 'text', 'option1', 'option2', 'option3', 'option4', 'correct_option']
+        fields = ['id', 'text', 'options', 'correct_option']
 
     def to_representation(self, instance):
-        ret = super().to_representation(instance)
-        ret['options'] = [ret.pop('option1'), ret.pop('option2'), ret.pop('option3'), ret.pop('option4')]
-        ret['correctOption'] = ret.pop('correct_option')
-        return ret
+        rep = super().to_representation(instance)
 
-    def to_internal_value(self, data):
-        data = data.copy()
-        if 'options' in data:
-            options = data.pop('options')
-            if len(options) != 4:
-                raise serializers.ValidationError("Exactly 4 options are required.")
-            data['option1'] = options[0]
-            data['option2'] = options[1]
-            data['option3'] = options[2]
-            data['option4'] = options[3]
-        if 'correctOption' in data:
-            data['correct_option'] = data.pop('correctOption')
-        return super().to_internal_value(data)
+        # لو الطالب هو اللي بيطلب الداتا، امسح correct_option
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'student'):
+            rep.pop('correct_option', None)  # Remove it from the response
+
+        return rep
+
+    def validate_options(self, value):
+        if not isinstance(value, list) or len(value) != 4:
+            raise serializers.ValidationError("Exactly 4 options are required.")
+        if not all(isinstance(opt, str) and opt.strip() for opt in value):
+            raise serializers.ValidationError("All options must be non-empty strings.")
+        return value
 
     def validate_correct_option(self, value):
         if value not in [0, 1, 2, 3]:
             raise serializers.ValidationError("Correct option must be between 0 and 3.")
         return value
 
+
+# ----------------------------
+# Quiz Serializer
+# ----------------------------
 class QuizSerializer(serializers.ModelSerializer):
     questions = QuizQuestionSerializer(many=True)
     course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all())
-    startTime = serializers.DateTimeField(source='start_time')
-    endTime = serializers.DateTimeField(source='end_time')
+    start_time = serializers.DateTimeField(required=False)
+    end_time = serializers.DateTimeField()
+    files = serializers.SerializerMethodField()
+    student_status = serializers.SerializerMethodField()
+    student_grade = serializers.SerializerMethodField()
 
     class Meta:
         model = Quiz
-        fields = ['id', 'course', 'title', 'questions', 'startTime', 'endTime', 'created_at', 'updated_at']
+        fields = [
+            'id', 'course', 'title', 'description', 'start_time', 'end_time',
+            'questions', 'created_at', 'updated_at', 'files',
+            'student_status', 'student_grade'
+        ]
+
+    def get_files(self, obj):
+        return [{'id': f.id, 'file_url': f.file.url} for f in obj.files.all()]
+
+    def get_student_status(self, obj):
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'student'):
+            submission = QuizSubmission.objects.filter(student=request.user.student, quiz=obj).first()
+            if submission:
+                return submission.status
+            else:
+                # لو الوقت خلص ولسه ماعملش سبميشن
+                if timezone.now() > obj.end_time:
+                    return 'ended'
+                return 'not_started'
+        return None
+
+    def get_student_grade(self, obj):
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'student'):
+            submission = QuizSubmission.objects.filter(student=request.user.student, quiz=obj).first()
+            if submission and submission.grade is not None:
+                return submission.grade
+        return None
+
 
     def validate(self, data):
-        start_time = data.get('start_time')
+        start_time = data.get('start_time') or (self.instance and self.instance.start_time)
         end_time = data.get('end_time')
+
         if start_time and end_time:
             if end_time <= start_time:
                 raise serializers.ValidationError("End time must be after start time.")
-            if end_time <= timezone.now():
+
+            egypt_now = localtime(now(), timezone=pytz.timezone("Africa/Cairo"))
+            if self.instance is None and end_time <= egypt_now:
                 raise serializers.ValidationError("End time must be in the future.")
-        questions = data.get('questions', [])
-        if not questions:
+
+        if not self.instance and not data.get('questions'):
             raise serializers.ValidationError("At least one question is required.")
+
         return data
 
     def to_representation(self, instance):
         ret = super().to_representation(instance)
-        start_time = ret.get('startTime')
-        end_time = ret.get('endTime')
-        if start_time and end_time:
-            start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-            end = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-            duration = (end - start).total_seconds() / 60  # Duration in minutes
-            ret['duration'] = duration
-        else:
-            ret['duration'] = None
+        start_time = ret.get('start_time')
+        end_time = ret.get('end_time')
+        start = parse_datetime(start_time) if start_time else None
+        end = parse_datetime(end_time) if end_time else None
+        ret['duration'] = (end - start).total_seconds() / 60 if start and end else None
         return ret
 
     def create(self, validated_data):
         questions_data = validated_data.pop('questions')
         course = validated_data.pop('course')
-        if not hasattr(self.context['request'].user, 'doctor'):
+        user = self.context['request'].user
+
+        if not hasattr(user, 'doctor'):
             raise serializers.ValidationError("Only doctors can create quizzes.")
-        quiz = Quiz.objects.create(
-            course=course,
-            created_by=self.context['request'].user.doctor,
-            **validated_data
-        )
+
+        if 'start_time' not in validated_data:
+            validated_data['start_time'] = timezone.now()
+
+        quiz = Quiz.objects.create(course=course, created_by=user.doctor, **validated_data)
+
         for question_data in questions_data:
             QuizQuestion.objects.create(quiz=quiz, **question_data)
         return quiz
@@ -87,17 +129,26 @@ class QuizSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         questions_data = validated_data.pop('questions', None)
         course = validated_data.pop('course', None)
+
         if course:
             instance.course = course
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
         if questions_data is not None:
             instance.questions.all().delete()
             for question_data in questions_data:
                 QuizQuestion.objects.create(quiz=instance, **question_data)
+
         return instance
 
+
+
+# ----------------------------
+# Assignment File Serializer
+# ----------------------------
 class AssignmentFileSerializer(serializers.ModelSerializer):
     file = serializers.FileField()
 
@@ -110,45 +161,118 @@ class AssignmentFileSerializer(serializers.ModelSerializer):
         ret['file_url'] = instance.file.url
         return ret
 
+# ----------------------------
+# Assignment Serializer
+# ----------------------------
 class AssignmentSerializer(serializers.ModelSerializer):
     files = AssignmentFileSerializer(many=True, read_only=True)
-    course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all())
-    uploaded_files = serializers.ListField(child=serializers.FileField(), write_only=True, required=False)
+
+    course_id = serializers.PrimaryKeyRelatedField(
+        queryset=Course.objects.all(),
+        source='course',
+        write_only=True
+    )
+    course_name = serializers.CharField(source='course.name', read_only=True)
+
+    assigned_to_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Student.objects.all(),
+        many=True,
+        source='assigned_to',
+        write_only=True
+    )
+
+    pdf_file = serializers.ListField(
+        child=serializers.FileField(),
+        write_only=True,
+        required=False,
+        source='uploaded_files'
+    )
 
     class Meta:
         model = Assignment
-        fields = ['id', 'course', 'title', 'deadline', 'files', 'uploaded_files', 'created_at', 'updated_at']
+        fields = [
+            'id', 'course_id', 'course_name', 'title', 'description',
+            'deadline', 'assigned_to_ids', 'files', 'pdf_file',
+            'created_at', 'updated_at'
+        ]
+
 
     def validate(self, data):
+        print("== Serializer Validate ==")
+        print(data)
         deadline = data.get('deadline')
         if deadline and deadline <= timezone.now():
             raise serializers.ValidationError("Deadline must be in the future.")
         return data
 
     def create(self, validated_data):
-        files_data = validated_data.pop('uploaded_files', [])
+        print("== Serializer Create ==")
+        print(f"Validated Data: {validated_data}")
+        
+        files_data = self.context['request'].FILES.getlist('pdf_file')  # لأنك عامل source='uploaded_files'
+        
+        # شيل uploaded_files من الداتا
+        validated_data.pop('uploaded_files', None)
+
         course = validated_data.pop('course')
+        assigned_to = validated_data.pop('assigned_to')
+
         if not hasattr(self.context['request'].user, 'doctor'):
             raise serializers.ValidationError("Only doctors can create assignments.")
+
         assignment = Assignment.objects.create(
             course=course,
             created_by=self.context['request'].user.doctor,
             **validated_data
         )
+        assignment.assigned_to.set(assigned_to)
+
         for file in files_data:
             AssignmentFile.objects.create(assignment=assignment, file=file)
+
         return assignment
 
+
+
     def update(self, instance, validated_data):
-        files_data = validated_data.pop('uploaded_files', None)
+        files_data = self.context['request'].FILES.getlist('uploaded_files')
         course = validated_data.pop('course', None)
+        assigned_to = validated_data.pop('assigned_to', None)
+
         if course:
             instance.course = course
+        if assigned_to is not None:
+            instance.assigned_to.set(assigned_to)
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-        if files_data is not None:
+
+        if files_data:
             instance.files.all().delete()
             for file in files_data:
                 AssignmentFile.objects.create(assignment=instance, file=file)
+
         return instance
+
+# ----------------------------
+# Quiz Submission Serializer
+# ----------------------------
+class QuizSubmissionSerializer(serializers.ModelSerializer):
+    student = serializers.PrimaryKeyRelatedField(read_only=True)
+    quiz = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = QuizSubmission
+        fields = ['id', 'student', 'quiz', 'answers', 'submitted_at', 'grade', 'feedback', 'status']
+
+# ----------------------------
+# Assignment Submission Serializer
+# ----------------------------
+class SubmissionSerializer(serializers.ModelSerializer):
+    student = serializers.PrimaryKeyRelatedField(read_only=True)
+    assignment = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = Submission
+        fields = ['id', 'student', 'assignment', 'file', 'answer_html', 'submitted_at', 'grade', 'feedback']

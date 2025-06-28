@@ -24,5 +24,5 @@ class DepartmentCoursesView(APIView):
                 'year_semester': key,
                 'courses': serializer.data
             })
-
+        # print("\n regulations : \n",response_data)
         return Response(response_data)

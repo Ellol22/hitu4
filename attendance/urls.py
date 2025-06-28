@@ -8,11 +8,6 @@ urlpatterns = [
     # - POST: لإنشاء محاضرة جديدة (بتاخد course_id, lecture_date, lecture_name).
     # الربط مع Flutter: واجهة الدكتور بتعمل طلب GET لعرض المواد، وطلب POST لإنشاء المحاضرة.
 
-    # path('start_code_session/', views.start_code_session_api, name='start_code_session_api'),
-    # يستخدمه الدكتور: 
-    # - POST: لبدء جلسة حضور جديدة لمحاضرة معينة (بتاخد lecture_id) وتفعيل نظام الكود العشوائي (6 أرقام).
-    # الربط مع Flutter: واجهة الدكتور بترسل طلب POST مع lecture_id عشان تبدأ جلسة الكود.
-
     path('get_latest_code/<int:lecture_id>/', views.get_latest_code_api, name='get_latest_code_api'),
     # يستخدمه الدكتور: 
     # - GET: لجلب آخر كود 6 أرقام مولد لمحاضرة معينة (مع وقت التوليد).

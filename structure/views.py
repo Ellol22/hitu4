@@ -210,6 +210,7 @@ def create_student_structure_on_registration(student: Student):
 
 # --- جزء الـ CRON أو التحديث التلقائي حسب التاريخ ---
 from django.apps import AppConfig
+from django.utils import timezone
 import datetime
 
 
@@ -218,38 +219,34 @@ class StructureConfig(AppConfig):
 
     def ready(self):
         from accounts.models import Student
+        from structure.views import (
+            update_student_structure,
+            finalize_after_summer,
+        )
 
         today = timezone.now().date()
 
-        run_dates = [
-            datetime.date(today.year, 2, 1),
-            datetime.date(today.year, 7, 1),
-            datetime.date(today.year, 9, 1),
-        ]
+        # التواريخ اللي فيها ترقية تلقائية
+        run_dates = {
+            datetime.date(today.year, 2, 1): "first_semester",
+            datetime.date(today.year, 7, 1): "second_semester",
+            datetime.date(today.year, 9, 1): "summer_finalize",
+        }
 
         if today in run_dates:
-            print(f"[CRON READY] Running scheduled student structure update for date: {today}")
+            action = run_dates[today]
+            print(f"[CRON] Running {action} updates for {today}")
 
             students = Student.objects.all()
-
             for student in students:
                 try:
-                    structure = StudentStructure.objects.get(student=student)
-                except StudentStructure.DoesNotExist:
-                    print(f"[CRON READY] StudentStructure not found for student {student.user.username}, skipping.")
-                    continue
+                    if action in ["first_semester", "second_semester"]:
+                        result = update_student_structure(student)
+                    elif action == "summer_finalize":
+                        result = finalize_after_summer(student)
 
-                if today == datetime.date(today.year, 2, 1):
-                    result = update_student_structure(student)
-                    print(f"[1/2] Updated {student.user.username}: {result}")
-
-                elif today == datetime.date(today.year, 7, 1):
-                    result = update_student_structure(student)
-                    print(f"[1/7] Updated {student.user.username}: {result}")
-
-                elif today == datetime.date(today.year, 9, 1):
-                    result = finalize_after_summer(student)
-                    print(f"[1/9] Finalized {student.user.username}: {result}")
-
+                    print(f"[{action.upper()}] {student.user.username}: {result}")
+                except Exception as e:
+                    print(f"[ERROR] {student.user.username}: {e}")
         else:
-            print(f"[CRON READY] Today {today} is not a scheduled run date.")
+            print(f"[SKIP] Today {today} is not in the scheduled update list.")

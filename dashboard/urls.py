@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import personal_info ,announcement_api, send_notification, student_notifications
+from .views import get_doctor_courses, personal_info ,announcement_api, send_notification, student_notifications
 
 urlpatterns = [
     path('pers-info/', personal_info, name='pers-info'),
@@ -8,4 +8,5 @@ urlpatterns = [
     path('notification/', send_notification, name='notification-list'),                  # GET, POST
     path('notification/<int:id>/', send_notification, name='notification-detail'),       # GET (واحدة), PUT, DELETE
     path('notification/student/', student_notifications, name='student-notifications'),
+    path('staff/courses/', get_doctor_courses, name='doctor-courses'),
 ]

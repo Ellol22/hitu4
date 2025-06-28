@@ -92,6 +92,7 @@ class AnnouncementSerializer(serializers.ModelSerializer):
 from rest_framework import serializers
 from .models import Notifications
 from courses.models import Course
+from structure.models import StudentStructure
 
 class NotificationSerializer(serializers.ModelSerializer):
     # 📥 حقل كتابة: إدخال course ID
@@ -119,3 +120,18 @@ class NotificationSerializer(serializers.ModelSerializer):
             'sender',     # output فقط
         ]
 
+
+
+
+
+class StructureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StudentStructure
+        fields = ['department', 'year', 'semester']
+
+class CourseSerializer(serializers.ModelSerializer):
+    structure = StructureSerializer()
+
+    class Meta:
+        model = Course
+        fields = ['id', 'name', 'structure']

@@ -111,8 +111,11 @@ def personal_info(request):
                     response_data = {'message': 'Image uploaded successfully'}
                     response_status = 200
 
+
     except Exception as e:
+        import traceback
         print(f"[Personal Info] Exception: {str(e)}")
+        traceback.print_exc()
         response_data = {'error': 'An unexpected error occurred'}
         response_status = 500
 
@@ -346,3 +349,35 @@ def student_notifications(request):
 
     serializer = NotificationSerializer(notifications, many=True)
     return Response(serializer.data)
+
+
+
+
+
+
+
+
+# مثلا في courses/views.py
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from accounts.models import Doctor
+from courses.models import Course
+from .serializer import CourseSerializer
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_doctor_courses(request):
+    try:
+        doctor = Doctor.objects.get(user=request.user)
+    except Doctor.DoesNotExist:
+        return Response({'detail': 'أنت مش دكتور'}, status=403)
+
+    courses = doctor.courses.all()
+    serializer = CourseSerializer(courses, many=True)
+    print("doc courses : ",serializer.data)
+    return Response(serializer.data)
+
+
+
+#################################################################################

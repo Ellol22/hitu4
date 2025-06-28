@@ -1,26 +1,49 @@
-from rest_framework.decorators import api_view, permission_classes , parser_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.utils import timezone
 from django.core.exceptions import ObjectDoesNotExist
-from .models import AssignmentFile, Course, Quiz, Assignment, QuizSubmission, QuizAnswer, Submission
-from .serializers import AssignmentFileSerializer, QuizSerializer, AssignmentSerializer
+from .models import Quiz, Assignment, QuizSubmission, Submission, AssignmentFile
+from .serializers import AssignmentFileSerializer, QuizSerializer, AssignmentSerializer, QuizSubmissionSerializer, SubmissionSerializer
 from accounts.models import Doctor, Student
+from courses.models import Course, StudentCourse
+import json
+from django.db.models import Q
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from courses.models import Course
+from .models import Assignment  # حسب اسم الابليكيشن عندك
+from .models import Quiz           # حسب اسم الابليكيشن عندك
 import json
 from rest_framework.parsers import MultiPartParser, FormParser
+from django.db.models import Avg, Sum
+from grades.models import GradeSheet, StudentGrade
+from datetime import datetime
+from django.utils.dateparse import parse_datetime
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.utils import timezone
+from django.db import connection
+import json
+import logging
+from .models import Quiz, QuizSubmission
+from courses.models import Course
 
-
-# Custom permission to check if user is a Doctor
 def is_doctor(user):
     return hasattr(user, 'doctor')
 
-# Custom permission to check if user is enrolled in a course
+def is_student(user):
+    return hasattr(user, 'student')
+
 def is_enrolled_in_course(user, course):
-    if not hasattr(user, 'student'):
+    if not is_student(user):
         return False
     return course.stucourses.filter(student=user.student).exists()
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -28,206 +51,195 @@ def staff_courses(request):
     if not is_doctor(request.user):
         return Response({"detail": "Only doctors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
 
-    courses = request.user.doctor.get_my_courses()
+    courses = Course.objects.filter(doctor=request.user.doctor)
     response_data = {
         'courses': [
-            {'courseCode': c.id, 'courseName': c.name}
+            {'id': c.id, 'code': c.id, 'name': c.name}
             for c in courses
         ]
     }
     print("✅ Response Data:", response_data)
     return Response(response_data)
 
-@api_view(['GET', 'POST'])
-@parser_classes([MultiPartParser, FormParser])  # دعم multipart/form-data
+
+
+@api_view(['GET'])
+@parser_classes([MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])
 def staff_quizzes(request):
     if not is_doctor(request.user):
         return Response({"detail": "Only doctors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
 
-    if request.method == 'POST':
-        # التحقق من نوع المحتوى
-        if 'multipart/form-data' not in request.content_type and request.content_type != 'application/json':
-            print(f"❗ Unsupported Content-Type: {request.content_type}")
-            return Response({"detail": "Content-Type must be application/json or multipart/form-data"}, status=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
-
-        print("📥 Incoming Request Data:")
-        print(request.data)
-
-        # التحقق من وجود course_id في البيانات
-        course_id = request.data.get('course')
-        if not course_id:
-            print("❌ No course ID provided")
-            return Response({"detail": "Course ID is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            course = Course.objects.get(id=course_id)
-            if course.doctor != request.user.doctor:
-                print("❌ Doctor not allowed to upload to this course")
-                return Response({"detail": "You are not allowed to upload to this course."}, status=status.HTTP_403_FORBIDDEN)
-        except Course.DoesNotExist:
-            print("❌ Course not found")
-            return Response({"detail": "Course not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        # معالجة بيانات الكويز
-        quiz_serializer = QuizSerializer(data=request.data, context={'request': request})
-        if quiz_serializer.is_valid():
-            quiz = quiz_serializer.save()
-            response_data = quiz_serializer.data
-
-            # إذا كان فيه ملف مرفوع
-            if 'file' in request.FILES:
-                file_data = {
-                    'file': request.FILES['file']
-                }
-                file_serializer = AssignmentFileSerializer(data=file_data)
-                if file_serializer.is_valid():
-                    # حفظ الملف مع ربطه بالكويز
-                    upload_file = file_serializer.save(quiz=quiz, assignment=None)  # لو هتستخدمي حقل quiz في AssignmentFile
-                    response_data['file_url'] = upload_file.file.url
-                    print("✅ File uploaded successfully")
-                else:
-                    print("❌ File serializer errors:", file_serializer.errors)
-                    return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-            print("📤 Outgoing Response Data:")
-            print(json.dumps(response_data, indent=4, ensure_ascii=False))
-            return Response(response_data, status=status.HTTP_201_CREATED)
-
-        print("❌ Quiz validation errors:")
-        print(json.dumps(quiz_serializer.errors, indent=4, ensure_ascii=False))
-        return Response(quiz_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
     elif request.method == 'GET':
-        quizzes = Quiz.objects.filter(course__in=request.user.doctor.get_my_courses())
+        quizzes = Quiz.objects.filter(course__doctor=request.user.doctor)
         serializer = QuizSerializer(quizzes, many=True)
-        response_data = []
-        for quiz_data in serializer.data:
-            start_time = quiz_data.get('startTime')
-            end_time = quiz_data.get('endTime')
-            if start_time and end_time:
-                from datetime import datetime
-                start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                end = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                duration = (end - start).total_seconds() / 60  # Duration in minutes
-                quiz_data['duration'] = duration
-            # إضافة روابط الملفات المرتبطة بالكويز
-            quiz = Quiz.objects.get(id=quiz_data['id'])
-            files = AssignmentFile.objects.filter(quiz=quiz)  # لو هتستخدمي حقل quiz
-            quiz_data['files'] = [{'id': f.id, 'file_url': f.file.url} for f in files]
-            response_data.append(quiz_data)
-
-        print("📤 GET Response Data:")
-        print(json.dumps(response_data, indent=4, ensure_ascii=False))
+        response_data = serializer.data
+        print("📤 GET Response Data:", json.dumps(response_data, indent=4, ensure_ascii=False))
         return Response(response_data)
 
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-from django.utils import timezone
-from quiz.models import Quiz
-from quiz.serializers import QuizSerializer
-from django.core.exceptions import PermissionDenied
+# ------------------ POST only (Create) ------------------
 import json
-from datetime import datetime
+from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+@permission_classes([IsAuthenticated])
+def create_quiz(request):
+    if not is_doctor(request.user):
+        return Response({"detail": "Only doctors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+    if 'multipart/form-data' not in request.content_type and request.content_type != 'application/json':
+        return Response({"detail": "Content-Type must be application/json or multipart/form-data"}, status=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
+
+    print("📥 Incoming Request Data:", request.data)
+
+    # ✅ تجهيز الداتا
+    data = request.data.dict()
+
+    # تحويل course_id إلى course
+    data['course'] = data.pop('course_id', None)
+
+    # تحويل deadline إلى start_time و end_time
+    data['start_time'] = timezone.now()
+    data['end_time'] = data.pop('deadline', None)
+
+    # ✅ تأكيد تحويل questions من JSON string → Python list
+    if 'questions' in data:
+        try:
+            data['questions'] = json.loads(data['questions'])
+        except json.JSONDecodeError:
+            return Response({'questions': 'Invalid JSON format.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    quiz_serializer = QuizSerializer(data=data, context={'request': request})
+    if quiz_serializer.is_valid():
+        quiz = quiz_serializer.save()
+        response_data = quiz_serializer.data
+
+        if 'pdf_file' in request.FILES:
+            file_data = {'file': request.FILES['pdf_file']}
+            file_serializer = AssignmentFileSerializer(data=file_data)
+            if file_serializer.is_valid():
+                upload_file = file_serializer.save(quiz=quiz, assignment=None)
+                response_data['files'] = [{'id': upload_file.id, 'file_url': upload_file.file.url}]
+            else:
+                return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(response_data, status=status.HTTP_201_CREATED)
+
+    return Response(quiz_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@parser_classes([MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])
 def staff_quiz_detail(request, quiz_id):
-    print("📥 Incoming Request:")
-    print(json.dumps({
-        "method": request.method,
-        "user": str(request.user),
-        "user_id": request.user.id,
-        "data": request.data if request.method in ['PUT'] else None,
-    }, indent=4, ensure_ascii=False))
-
     if not is_doctor(request.user):
         return Response({"detail": "Only doctors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         quiz = Quiz.objects.get(id=quiz_id)
+        if quiz.course.doctor != request.user.doctor:
+            return Response({"detail": "You are not authorized to access this quiz."}, status=status.HTTP_403_FORBIDDEN)
     except Quiz.DoesNotExist:
-        print(f"❌ Quiz with id={quiz_id} not found.")
         return Response({"detail": f"Quiz with id={quiz_id} not found."}, status=status.HTTP_404_NOT_FOUND)
-
-    # ✅ التحقق إن الدكتور هو صاحب المادة
-    if quiz.course.doctor != request.user.doctor:
-        return Response({"detail": "You are not authorized to access this quiz."}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
         serializer = QuizSerializer(quiz)
-        response_data = serializer.data
-        start_time = response_data.get('startTime')
-        end_time = response_data.get('endTime')
-        if start_time and end_time:
-            from datetime import datetime
-            start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-            end = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-            duration = (end - start).total_seconds() / 60
-            response_data['duration'] = duration
-
-        print("📤 Outgoing Response:")
-        print(json.dumps(response_data, indent=4, ensure_ascii=False, default=str))
-        return Response(response_data)
+        return Response(serializer.data)
 
     elif request.method == 'PUT':
-        serializer = QuizSerializer(quiz, data=request.data, context={'request': request})
+        print("🔁 Request Method:", request.method)
+        print("📥 Raw Request Data:", request.data)
+
+        raw_data = request.data
+        data = {}
+
+        # حل مشكلة course_id
+        course_id = raw_data.get('course_id')
+        if course_id:
+            data['course'] = course_id if isinstance(course_id, str) else course_id[0]
+
+        # باقي الفيلدات العادية
+        for key in ['title', 'description', 'end_time', 'start_time']:
+            val = raw_data.get(key)
+            if val:
+                data[key] = val if isinstance(val, str) else val[0]
+
+        # حل مشكلة questions (تحويل string → list)
+        if 'questions' in raw_data:
+            try:
+                questions_str = raw_data.get('questions')
+                if isinstance(questions_str, list):
+                    questions_str = questions_str[0]
+                data['questions'] = json.loads(questions_str)
+            except json.JSONDecodeError:
+                print("❌ JSON Decode Error in 'questions'")
+                return Response({'questions': ['Invalid JSON format.']}, status=400)
+
+        # حفظ الـ quiz بعد التعديل
+        serializer = QuizSerializer(quiz, data=data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
-            response_data = serializer.data
-            start_time = response_data.get('startTime')
-            end_time = response_data.get('endTime')
-            if start_time and end_time:
-                from datetime import datetime
-                start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                end = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                duration = (end - start).total_seconds() / 60
-                response_data['duration'] = duration
-            print("✅ Quiz updated successfully")
-            print("📤 Outgoing Response:")
-            print(json.dumps(response_data, indent=4, ensure_ascii=False, default=str))
-            return Response(response_data)
-        else:
-            print("❌ Validation Errors:")
-            print(json.dumps(serializer.errors, indent=4, ensure_ascii=False))
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            print("✅ Serializer Valid. Saved Data:", serializer.data)
+            return Response(serializer.data)
+
+        print("❌ Serializer Errors:", serializer.errors)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
 
     elif request.method == 'DELETE':
         quiz.delete()
-        print("🗑️ Quiz deleted successfully.")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 
+
+
 @api_view(['GET', 'POST'])
-@parser_classes([MultiPartParser, FormParser])  # عشان يستقبل ملفات
+@parser_classes([MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])
 def staff_assignments(request):
+    print("== Incoming Request ==")
+    print(f"Method: {request.method}")
+    print(f"User: {request.user}")
+    print(f"Content-Type: {request.content_type}")
+    print(f"Data: {request.data}")
+    print(f"FILES: {request.FILES}")
+
     if not is_doctor(request.user):
+        print("== Access Denied: User is not a doctor ==")
         return Response({"detail": "Only doctors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
-        assignments = Assignment.objects.filter(course__in=request.user.doctor.get_my_courses())
+        assignments = Assignment.objects.filter(course__doctor=request.user.doctor)
         serializer = AssignmentSerializer(assignments, many=True)
+        print("== GET Response ==")
+        print(serializer.data)
         return Response(serializer.data)
 
     elif request.method == 'POST':
         serializer = AssignmentSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             assignment = serializer.save()
-
-            # ✅ حفظ الملف لو موجود
-            if 'file' in request.FILES:
-                AssignmentFile.objects.create(
-                    assignment=assignment,
-                    file=request.FILES['file']
-                )
-
+            print("== POST Response ==")
+            print(serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            print("== Validation Errors ==")
+            print(serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
@@ -237,18 +249,15 @@ def staff_assignment_detail(request, assignment_id):
 
     try:
         assignment = Assignment.objects.get(id=assignment_id)
+        if assignment.course.doctor != request.user.doctor:
+            return Response({"detail": "You are not authorized to access this assignment."}, status=status.HTTP_403_FORBIDDEN)
     except Assignment.DoesNotExist:
         print(f"❌ Assignment with id={assignment_id} not found.")
         return Response({"detail": f"Assignment with id={assignment_id} not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    # تحقق إن الدكتور الحالي هو صاحب المادة المرتبط بيها التكليف
-    if assignment.course.doctor != request.user.doctor:
-        return Response({"detail": "You are not authorized to access this assignment."}, status=status.HTTP_403_FORBIDDEN)
-
     if request.method == 'GET':
         serializer = AssignmentSerializer(assignment)
-        print("📤 GET Response Data:")
-        print(json.dumps(serializer.data, indent=4, ensure_ascii=False, default=str))
+        print("📤 GET Response Data:", json.dumps(serializer.data, indent=4, ensure_ascii=False, default=str))
         return Response(serializer.data)
 
     elif request.method == 'PUT':
@@ -256,12 +265,10 @@ def staff_assignment_detail(request, assignment_id):
         if serializer.is_valid():
             serializer.save()
             print("✅ Assignment updated successfully")
-            print("📤 Outgoing Response:")
-            print(json.dumps(serializer.data, indent=4, ensure_ascii=False, default=str))
+            print("📤 Outgoing Response:", json.dumps(serializer.data, indent=4, ensure_ascii=False, default=str))
             return Response(serializer.data)
         else:
-            print("❌ Validation Errors:")
-            print(json.dumps(serializer.errors, indent=4, ensure_ascii=False))
+            print("❌ Validation Errors:", json.dumps(serializer.errors, indent=4, ensure_ascii=False))
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
@@ -270,236 +277,185 @@ def staff_assignment_detail(request, assignment_id):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-# @api_view(['POST'])
-# @permission_classes([IsAuthenticated])
-# def staff_quizzes_notify(request):
-#     if not is_doctor(request.user):
-#         return Response({"detail": "Only doctors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
-
-#     quiz_id = request.data.get('quizId')
-#     course_id = request.data.get('course')
-#     try:
-#         quiz = Quiz.objects.get(id=quiz_id, course_id=course_id)
-#         if not is_enrolled_in_course(request.user, quiz.course):
-#             return Response({"detail": "You are not authorized to notify for this quiz."}, status=status.HTTP_403_FORBIDDEN)
-#         # Implement notification logic (e.g., send emails or push notifications to students)
-#         return Response({"detail": "Notification sent successfully."}, status=status.HTTP_200_OK)
-#     except ObjectDoesNotExist:
-#         return Response({"detail": "Quiz or course not found."}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def student_courses(request):
-    print("📥 Incoming Request Data:")
-    print(json.dumps({
-        "user": str(request.user),
-        "user_id": request.user.id,
-        "user_type": "Student" if hasattr(request.user, 'student') else "Other"
-    }, indent=4, ensure_ascii=False))
-
-    if not hasattr(request.user, 'student'):
+    if not is_student(request.user):
         return Response({"detail": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
 
-    student_courses = request.user.student.student_courses.select_related('course').all()
+    student = request.user.student
+    current_structure = student.structure
+
+    if not current_structure:
+        return Response({"detail": "Student has no current structure assigned."}, status=status.HTTP_404_NOT_FOUND)
+
+    # الفلترة على المواد اللي في الاستراكتشر الحالي
+    courses = Course.objects.filter(structure=current_structure)
+
+    # فلترة المواد اللي ليها أي tasks أو quizzes أو assignments
+    courses = courses.filter(
+        Q(quizzes__isnull=False) |
+        Q(assignments__isnull=False)
+    ).distinct()
+
+
     response_data = [
         {
-            "courseCode": sc.course.id,
-            "courseName": sc.course.name
-        } for sc in student_courses
+            "id": course.id,
+            "code": course.id,
+            "name": course.name
+        } for course in courses
     ]
 
-    # print("📤 Outgoing Response Data:")
-    # print(json.dumps(response_data, indent=4, ensure_ascii=False))
+    print("📤 Outgoing Response Data:", json.dumps(response_data, indent=4, ensure_ascii=False))
     return Response(response_data)
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-from django.utils import timezone
-import json
-from .models import Quiz, QuizSubmission, QuizAnswer
-from .serializers import QuizSerializer
 
 
-def is_enrolled_in_course(user, course):
-    return course.stucourses.filter(student=user.student).exists()
 
+
+
+logger = logging.getLogger(__name__)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def student_quizzes(request):
-    print("📥 Incoming Request Data:")
-    print(json.dumps({
-        "user": str(request.user),
-        "user_id": request.user.id,
-        "user_type": "Student" if hasattr(request.user, 'student') else "Other"
-    }, indent=4, ensure_ascii=False))
+    student = getattr(request.user, 'student', None)
+    if not student:
+        return Response({'detail': 'Only students can access this endpoint.'}, status=403)
 
-    if not hasattr(request.user, 'student'):
-        return Response({"detail": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+    student_courses = StudentCourse.objects.filter(student=student).values_list('course_id', flat=True)
 
-    student_courses_ids = request.user.student.student_courses.values_list('course_id', flat=True)
-    quizzes = Quiz.objects.filter(course_id__in=student_courses_ids)
+    # فلترة الكويزات: اللي تبع كورسات الطالب واللي وقتها لسه ما انتهاش
     now = timezone.now()
+    quizzes = Quiz.objects.filter(
+        course_id__in=student_courses,
+        end_time__gt=now  # بس اللي لسه وقتها ما خلصش
+    ).order_by('-start_time')
 
-    quiz_data = []
-    for quiz in quizzes:
-        submission = QuizSubmission.objects.filter(quiz=quiz, student=request.user.student).first()
-
-        # Determine quiz status and score for this student
-        if submission:
-            status_value = submission.status
-            score = submission.score
-        elif quiz.start_time <= now <= quiz.end_time:
-            status_value = 'not_started'
-            score = None
-        else:
-            continue  # Skip if quiz is not available and no submission
-
-        duration = (quiz.end_time - quiz.start_time).total_seconds() / 60  # Duration in minutes
-
-        quiz_data.append({
-            "quiz_id": quiz.id,
-            "title": quiz.title,
-            "course": quiz.course.name,
-            "start_time": quiz.start_time,
-            "end_time": quiz.end_time,
-            "duration": duration,
-            "status": status_value,
-            "score": score
-        })
-
-    print("📤 Outgoing Response Data:")
-    print(json.dumps(quiz_data, indent=4, ensure_ascii=False, default=str))
-    return Response(quiz_data)
-
-
+    serializer = QuizSerializer(quizzes, many=True, context={'request': request})
+    return Response(serializer.data)
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def student_quiz_detail(request, quiz_id):
-    if not hasattr(request.user, 'student'):
+    if not is_student(request.user):
         return Response({"detail": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         quiz = Quiz.objects.get(id=quiz_id)
+        # تحقّق بس من الاشتراك في الكورس بدون الرجوع لـ assigned_to
+        if not is_enrolled_in_course(request.user, quiz.course):
+            return Response({"detail": "You are not authorized for this quiz."}, status=status.HTTP_403_FORBIDDEN)
     except Quiz.DoesNotExist:
         return Response({"detail": "Quiz not found."}, status=status.HTTP_404_NOT_FOUND)
-
-    if not is_enrolled_in_course(request.user, quiz.course):
-        return Response({"detail": "You are not enrolled in the course for this quiz."}, status=status.HTTP_403_FORBIDDEN)
 
     now = timezone.now()
     if not (quiz.start_time <= now <= quiz.end_time):
         return Response({"detail": "Quiz not available right now."}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
-        serializer = QuizSerializer(quiz)
+        serializer = QuizSerializer(quiz, context={'request': request})
         response_data = serializer.data
-
-        start_time = response_data.get('startTime')
-        end_time = response_data.get('endTime')
-
-        if start_time and end_time:
-            from datetime import datetime
-            start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-            end = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-            duration = (end - start).total_seconds() / 60
-            response_data['duration'] = duration
-        else:
-            response_data['duration'] = None
-
-        print("📤 GET Response Data:")
-        print(json.dumps(response_data, indent=4, ensure_ascii=False, default=str))
+        print("📤 GET Response Data:", json.dumps(response_data, indent=4, ensure_ascii=False, default=str))
         return Response(response_data)
 
     elif request.method == 'POST':
         if QuizSubmission.objects.filter(quiz=quiz, student=request.user.student).exists():
             return Response({"detail": "You have already submitted this quiz."}, status=status.HTTP_400_BAD_REQUEST)
 
-        answers = request.data.get("answers", [])
-        questions = quiz.questions.order_by('id')
-
+        answers = request.data.get("answers", {})
+        questions = quiz.questions.all()
         if len(answers) != questions.count():
             return Response({"detail": "Incomplete answers."}, status=status.HTTP_400_BAD_REQUEST)
 
-        submission = QuizSubmission.objects.create(student=request.user.student, quiz=quiz)
-
-        for index, answer in enumerate(answers):
-            question = questions[index]
-            QuizAnswer.objects.create(
-                submission=submission,
-                question=question,
-                selected_option=answer
-            )
-
+        submission = QuizSubmission.objects.create(
+            student=request.user.student,
+            quiz=quiz,
+            answers=answers,
+            status='ended'
+        )
         submission.calculate_score()
-        submission.status = "ended"
-        submission.save()
+        serializer = QuizSubmissionSerializer(submission)
+        return Response({
+            "detail": "Quiz submitted successfully.",
+            "submission": serializer.data
+        })
 
-        return Response({"detail": "Quiz submitted successfully.", "score": submission.score})
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def student_assignments(request):
-    print("\n📥 Incoming Request Data:")
-    print(json.dumps({
-        "user": str(request.user),
-        "user_id": request.user.id,
-        "user_type": "Student" if hasattr(request.user, 'student') else "Other"
-    }, indent=4, ensure_ascii=False))
-
-    if not hasattr(request.user, 'student'):
+    if not is_student(request.user):
         return Response({"detail": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
 
-    student_courses_ids = request.user.student.student_courses.values_list('course_id', flat=True)
-    assignments = Assignment.objects.filter(course_id__in=student_courses_ids)
+    student = request.user.student
+    now = timezone.now()
+
+    # Get IDs of student’s courses
+    student_courses_ids = Course.objects.filter(stucourses__student=student).values_list('id', flat=True)
+
+    # Get only assignments that:
+    # - are in the student's courses
+    # - are assigned to the student
+    # - AND the deadline has not passed
+    assignments = Assignment.objects.filter(
+        course_id__in=student_courses_ids,
+        assigned_to=student,
+        deadline__gt=now  # ده السطر المهم
+    )
 
     assignment_data = []
     for assignment in assignments:
         file_obj = assignment.files.first()
         file_url = request.build_absolute_uri(file_obj.file.url) if file_obj else None
 
-        print(f"📎 Assignment {assignment.id} File URL: {file_url}")
-
         assignment_data.append({
-            "assignment_id": assignment.id,
+            "id": assignment.id,
             "title": assignment.title,
-            "course": assignment.course.name,
+            "description": assignment.description,
+            "course": {
+                "id": assignment.course.id,
+                "code": assignment.course.id,
+                "name": assignment.course.name
+            },
             "deadline": assignment.deadline,
-            "file": file_url
+            "pdf_file": file_url
         })
 
-    print("\n📤 Outgoing Response Data:")
-    print(json.dumps(assignment_data, indent=4, ensure_ascii=False, default=str))
-
+    print("📤 Outgoing Response Data:", json.dumps(assignment_data, indent=4, ensure_ascii=False, default=str))
     return Response(assignment_data)
 
 
 
+
 @api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])
 def student_submit_assignment(request, assignment_id):
-    if not hasattr(request.user, 'student'):
+    if not is_student(request.user):
         return Response({"detail": "Only students can submit assignments."}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         assignment = Assignment.objects.get(id=assignment_id)
+        if not is_enrolled_in_course(request.user, assignment.course) or request.user.student not in assignment.assigned_to.all():
+            return Response({"detail": "You are not authorized for this assignment."}, status=status.HTTP_403_FORBIDDEN)
         if timezone.now() > assignment.deadline:
             return Response({"detail": "Deadline has passed."}, status=status.HTTP_403_FORBIDDEN)
 
-        files = request.FILES.getlist('files')
-        if not files:
-            return Response({"detail": "No files uploaded."}, status=status.HTTP_400_BAD_REQUEST)
+        pdf_file = request.FILES.get('pdf_file')
+        answer_html = request.data.get('answer_html', '')
+        if not pdf_file:
+            return Response({"detail": "PDF file is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        for file in files:
-            Submission.objects.create(
-                assignment=assignment,
-                student=request.user.student,
-                file=file
-            )
-
-        return Response({"detail": "Assignment submitted successfully."}, status=status.HTTP_201_CREATED)
+        submission = Submission.objects.create(
+            assignment=assignment,
+            student=request.user.student,
+            file=pdf_file,
+            answer_html=answer_html
+        )
+        serializer = SubmissionSerializer(submission)
+        return Response({"detail": "Assignment submitted successfully.", "submission": serializer.data}, status=status.HTTP_201_CREATED)
 
     except Assignment.DoesNotExist:
         return Response({"detail": "Assignment not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -507,7 +463,7 @@ def student_submit_assignment(request, assignment_id):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def student_delete_submission(request, submission_id):
-    if not hasattr(request.user, 'student'):
+    if not is_student(request.user):
         return Response({"detail": "Only students can delete submissions."}, status=status.HTTP_403_FORBIDDEN)
 
     try:
@@ -521,3 +477,210 @@ def student_delete_submission(request, submission_id):
 
     except Submission.DoesNotExist:
         return Response({"detail": "Submission not found."}, status=status.HTTP_404_NOT_FOUND)
+
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def quiz_submissions(request, quiz_id):
+    if not is_doctor(request.user):
+        return Response({"detail": "الطريقه دي للدكاتره بس."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        quiz = Quiz.objects.get(id=quiz_id)
+        if quiz.course.doctor != request.user.doctor:
+            return Response({"detail": "مش مسموحلك تشوف الكويز ده."}, status=status.HTTP_403_FORBIDDEN)
+    except Quiz.DoesNotExist:
+        return Response({"detail": "الكويز مش موجود."}, status=status.HTTP_404_NOT_FOUND)
+
+    submissions = QuizSubmission.objects.filter(quiz=quiz)
+
+    # استخدم جدول StudentCourse علشان تجيب الطلبة
+    total_students = StudentCourse.objects.filter(course=quiz.course).count()
+    submitted = submissions.count()
+    not_submitted = total_students - submitted
+
+    avg_grade_result = submissions.aggregate(avg_grade=Avg('grade'))['avg_grade']
+    average_grade = avg_grade_result if avg_grade_result is not None else 0
+
+    serializer = QuizSubmissionSerializer(submissions, many=True)
+
+    return Response({
+        "submissions": serializer.data,
+        "stats": {
+            "total_students": total_students,
+            "submitted": submitted,
+            "not_submitted": not_submitted,
+            "average_grade": round(average_grade, 2)
+        }
+    })
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def grade_quiz_submission(request, submission_id):
+    if not is_doctor(request.user):
+        return Response({"detail": "Only doctors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        submission = QuizSubmission.objects.get(id=submission_id)
+        if submission.quiz.course.doctor != request.user.doctor:
+            return Response({"detail": "You are not authorized to grade this submission."}, status=status.HTTP_403_FORBIDDEN)
+    except QuizSubmission.DoesNotExist:
+        return Response({"detail": "Submission not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    grade = request.data.get('grade')
+    feedback = request.data.get('feedback', '')
+    if grade is None or not isinstance(grade, (int, float)) or grade < 0 or grade > 100:
+        return Response({"detail": "Valid grade (0-100) is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check if new grade exceeds year_work_full_score
+    try:
+        grade_sheet = GradeSheet.objects.get(course=submission.quiz.course)
+        student_grade = StudentGrade.objects.get(grade_sheet=grade_sheet, student=submission.student)
+        quiz_grades_result = QuizSubmission.objects.filter(
+            student=submission.student,
+            quiz__course=submission.quiz.course,
+            grade__isnull=False
+        ).exclude(id=submission.id).aggregate(total=Sum('grade'))['total']
+        assignment_grades_result = Submission.objects.filter(
+            student=submission.student,
+            assignment__course=submission.quiz.course,
+            grade__isnull=False
+        ).aggregate(total=Sum('grade'))['total']
+        quiz_grades = quiz_grades_result if quiz_grades_result is not None else 0
+        assignment_grades = assignment_grades_result if assignment_grades_result is not None else 0
+        total_grades = quiz_grades + assignment_grades + grade
+        new_year_work_score = (total_grades / 200) * grade_sheet.year_work_full_score
+        if new_year_work_score > grade_sheet.year_work_full_score:
+            return Response({"detail": f"Grade would exceed year work score limit ({grade_sheet.year_work_full_score})."}, status=status.HTTP_400_BAD_REQUEST)
+    except (GradeSheet.DoesNotExist, StudentGrade.DoesNotExist):
+        pass  # Allow grading if GradeSheet or StudentGrade doesn't exist yet
+
+    submission.grade = grade
+    submission.feedback = feedback
+    submission.save()  # This will trigger the signal to update year_work_score
+    serializer = QuizSubmissionSerializer(submission)
+    return Response({"detail": "Submission graded successfully.", "submission": serializer.data})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def task_submissions(request, task_id):
+    if not is_doctor(request.user):
+        return Response({"detail": "Only doctors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        assignment = Assignment.objects.get(id=task_id)
+        if assignment.course.doctor != request.user.doctor:
+            return Response({"detail": "You are not authorized to access this assignment."}, status=status.HTTP_403_FORBIDDEN)
+    except Assignment.DoesNotExist:
+        return Response({"detail": "Assignment not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    submissions = Submission.objects.filter(assignment=assignment)
+    total_students = assignment.assigned_to.count()
+    submitted = submissions.count()
+    not_submitted = total_students - submitted
+    # Fix: Handle NULL grades without Coalesce
+    avg_grade_result = submissions.aggregate(avg_grade=Avg('grade'))['avg_grade']
+    average_grade = avg_grade_result if avg_grade_result is not None else 0
+
+    serializer = SubmissionSerializer(submissions, many=True)
+    return Response({
+        "submissions": serializer.data,
+        "stats": {
+            "total_students": total_students,
+            "submitted": submitted,
+            "not_submitted": not_submitted,
+            "average_grade": round(average_grade, 2)
+        }
+    })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def grade_task_submission(request, submission_id):
+    if not is_doctor(request.user):
+        return Response({"detail": "Only doctors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        submission = Submission.objects.get(id=submission_id)
+        if submission.assignment.course.doctor != request.user.doctor:
+            return Response({"detail": "You are not authorized to grade this submission."}, status=status.HTTP_403_FORBIDDEN)
+    except Submission.DoesNotExist:
+        return Response({"detail": "Submission not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    grade = request.data.get('grade')
+    feedback = request.data.get('feedback', '')
+    if grade is None or not isinstance(grade, (int, float)) or grade < 0 or grade > 100:
+        return Response({"detail": "Valid grade (0-100) is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check if new grade exceeds year_work_full_score
+    try:
+        grade_sheet = GradeSheet.objects.get(course=submission.assignment.course)
+        student_grade = StudentGrade.objects.get(grade_sheet=grade_sheet, student=submission.student)
+        quiz_grades_result = QuizSubmission.objects.filter(
+            student=submission.student,
+            quiz__course=submission.assignment.course,
+            grade__isnull=False
+        ).aggregate(total=Sum('grade'))['total']
+        assignment_grades_result = Submission.objects.filter(
+            student=submission.student,
+            assignment__course=submission.assignment.course,
+            grade__isnull=False
+        ).exclude(id=submission.id).aggregate(total=Sum('grade'))['total']
+        quiz_grades = quiz_grades_result if quiz_grades_result is not None else 0
+        assignment_grades = assignment_grades_result if assignment_grades_result is not None else 0
+        total_grades = quiz_grades + assignment_grades + grade
+        new_year_work_score = (total_grades / 200) * grade_sheet.year_work_full_score
+        if new_year_work_score > grade_sheet.year_work_full_score:
+            return Response({"detail": f"Grade would exceed year work score limit ({grade_sheet.year_work_full_score})."}, status=status.HTTP_400_BAD_REQUEST)
+    except (GradeSheet.DoesNotExist, StudentGrade):
+        pass  # Allow grading if GradeSheet or StudentGrade doesn't exist yet
+
+    submission.grade = grade
+    submission.feedback = feedback
+    submission.save()  # This will trigger the signal to update year_work_score
+    serializer = SubmissionSerializer(submission)
+    return Response({"detail": "Submission graded successfully.", "submission": serializer.data})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_quiz_submission(request, quiz_id):
+    if not is_student(request.user):
+        return Response({"detail": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        quiz = Quiz.objects.get(id=quiz_id)
+        if not is_enrolled_in_course(request.user, quiz.course) or request.user.student not in quiz.assigned_to.all():
+            return Response({"detail": "You are not authorized for this quiz."}, status=status.HTTP_403_FORBIDDEN)
+    except Quiz.DoesNotExist:
+        return Response({"detail": "Quiz not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        submission = QuizSubmission.objects.get(quiz=quiz, student=request.user.student)
+        serializer = QuizSubmissionSerializer(submission)
+        return Response(serializer.data)
+    except QuizSubmission.DoesNotExist:
+        return Response({"status": "No submission"})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_task_submission(request, task_id):
+    if not is_student(request.user):
+        return Response({"detail": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        assignment = Assignment.objects.get(id=task_id)
+        if not is_enrolled_in_course(request.user, assignment.course) or request.user.student not in assignment.assigned_to.all():
+            return Response({"detail": "You are not authorized for this assignment."}, status=status.HTTP_403_FORBIDDEN)
+    except Assignment.DoesNotExist:
+        return Response({"detail": "Assignment not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        submission = Submission.objects.get(assignment=assignment, student=request.user.student)
+        serializer = SubmissionSerializer(submission)
+        return Response(serializer.data)
+    except Submission.DoesNotExist:
+        return Response({"status": "No submission"})

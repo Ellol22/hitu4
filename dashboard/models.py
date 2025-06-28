@@ -1,9 +1,12 @@
+import os
 from django.db import models
 from accounts.models import Student  # استدعي الموديل بتاع الطالب
 from django.contrib.auth.models import User
 
 def dynamic_image_upload(instance, filename):
-    name, extension = filename.split(".")
+    name, extension = os.path.splitext(filename)
+    extension = extension.lstrip('.')
+
     if instance.student:
         return f"student-image/{instance.student.user.username}.{extension}"
     elif instance.doctor:

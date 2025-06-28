@@ -149,3 +149,95 @@ def doctor_courses(request):
     # print("[Doctor Courses Response]:", courses_data)  # ✅ ده اللي بيطبع في التيرمنال/server log
 
     return Response(courses_data)
+
+
+
+#################################################################################
+# views.py
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Avg
+from grades.models import StudentGrade
+from accounts.models import Student
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def top_students_by_section_year(request):
+    result = {}
+
+    students = Student.objects.all()
+
+    for student in students:
+        grades = StudentGrade.objects.filter(student=student)
+
+        if not grades.exists():
+            continue
+
+        avg_percentage = grades.aggregate(avg=Avg("percentage"))["avg"]
+
+        key = f"{student.section.name} - Year {student.academic_year}"
+
+        if key not in result:
+            result[key] = []
+
+        result[key].append({
+            "full_name": student.full_name,
+            "student_id": student.id,
+            "avg_percentage": round(avg_percentage or 0, 2)
+        })
+
+    # نرتب ونجيب أول 10 بس
+    for key in result:
+        result[key] = sorted(result[key], key=lambda x: x["avg_percentage"], reverse=True)[:10]
+
+    return Response(result)
+
+
+
+#################################################################################
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from accounts.models import Doctor
+from courses.models import Course
+from grades.models import GradeSheet
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def doctor_courses_statistics(request):
+    try:
+        doctor = Doctor.objects.get(user=request.user)
+    except Doctor.DoesNotExist:
+        return Response({'detail': 'أنت مش دكتور'}, status=403)
+
+    statistics = []
+
+    courses = doctor.courses.all()
+
+    for course in courses:
+        try:
+            grade_sheet = course.courses  # related_name في OneToOneField
+            student_grades = grade_sheet.student_grades.all()
+            passed_count = student_grades.filter(is_passed=True).count()
+            failed_count = student_grades.filter(is_passed=False).count()
+
+            statistics.append({
+                "course_name": course.name,
+                "structure": f"{course.structure.section.name} - Year {course.structure.year}",
+                "passed": passed_count,
+                "failed": failed_count
+            })
+
+        except GradeSheet.DoesNotExist:
+            # لو مفيش grade sheet للمادة
+            statistics.append({
+                "course_name": course.name,
+                "structure": f"{course.structure.section.name} - Year {course.structure.year}",
+                "passed": 0,
+                "failed": 0
+            })
+
+    return Response(statistics)

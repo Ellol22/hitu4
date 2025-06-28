@@ -10,6 +10,7 @@ class ScheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Schedule
         fields = [
+                    'id',
                     'day', 'slot_number', 'start_time', 'end_time', 'section',
                     'room', 'type', 'course_name', 'instructor_name',
                     'department', 'year'

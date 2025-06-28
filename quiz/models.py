@@ -1,11 +1,12 @@
 from django.db import models
 from accounts.models import Doctor, Student
-from structure.models import StudentStructure
-from courses.models import Course  # Import Course if not already imported
+from courses.models import Course
+from django.contrib.auth.models import User
 
 class Quiz(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='quizzes')
     title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     created_by = models.ForeignKey(Doctor, on_delete=models.SET_NULL, null=True, related_name='created_quizzes')
@@ -18,20 +19,41 @@ class Quiz(models.Model):
 class QuizQuestion(models.Model):
     quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='questions')
     text = models.TextField()
-    option1 = models.CharField(max_length=255)
-    option2 = models.CharField(max_length=255)
-    option3 = models.CharField(max_length=255)
-    option4 = models.CharField(max_length=255)
-    correct_option = models.PositiveSmallIntegerField(choices=[(i, f"Option {i+1}") for i in range(4)])
+    options = models.JSONField()
+    correct_option = models.PositiveSmallIntegerField()
 
     def __str__(self):
         return f"Question: {self.text} (Quiz: {self.quiz.title})"
 
+class QuizSubmission(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='quiz_submissions')
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='submissions')
+    answers = models.JSONField()
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    grade = models.FloatField(null=True, blank=True)
+    feedback = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=[('not_started', 'Not Started'), ('ended', 'Ended')], default='not_started')
+
+    class Meta:
+        unique_together = ('student', 'quiz')
+
+    def calculate_score(self):
+        correct_answers = 0
+        total_questions = self.quiz.questions.count()
+        for q_id, selected in self.answers.items():
+            question = self.quiz.questions.get(id=q_id)
+            if selected == question.correct_option:
+                correct_answers += 1
+        self.grade = (correct_answers / total_questions) * 100 if total_questions else 0
+        self.save()
+
 class Assignment(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='assignments')
     title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
     deadline = models.DateTimeField()
     created_by = models.ForeignKey(Doctor, on_delete=models.SET_NULL, null=True, related_name='created_assignments')
+    assigned_to = models.ManyToManyField(Student, related_name='assigned_assignments')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -40,44 +62,21 @@ class Assignment(models.Model):
 
 class AssignmentFile(models.Model):
     assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='files')
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='files', null=True, blank=True)
     file = models.FileField(upload_to='assignments/files/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"File: {self.file.name} (Assignment: {self.assignment.title})"
-
-class QuizSubmission(models.Model):
-    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='quiz_submissions')
-    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='submissions')
-    submitted_at = models.DateTimeField(auto_now_add=True)
-    score = models.FloatField(default=0)
-    status = models.CharField(max_length=20, choices=[('not_started', 'Not Started'), ('ended', 'Ended')], default='not_started')
-
-    class Meta:
-        unique_together = ('student', 'quiz')
-
-    def calculate_score(self):
-        correct_answers = 0
-        total_questions = self.answers.count()
-        for answer in self.answers.all():
-            if answer.selected_option == answer.question.correct_option:
-                correct_answers += 1
-        self.score = (correct_answers / total_questions) * 100 if total_questions else 0
-        self.save()
-
-class QuizAnswer(models.Model):
-    submission = models.ForeignKey(QuizSubmission, on_delete=models.CASCADE, related_name='answers')
-    question = models.ForeignKey(QuizQuestion, on_delete=models.CASCADE)
-    selected_option = models.PositiveSmallIntegerField()
-
-    class Meta:
-        unique_together = ('submission', 'question')  # ✅ عشان ميتسجلش إجابة لنفس السؤال مرتين
+        return f"File: {self.file.name} (Assignment: {self.assignment.title if self.assignment else 'Quiz'})"
 
 class Submission(models.Model):
     assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='submissions')
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='submissions')
     file = models.FileField(upload_to='assignments/submissions/')
+    answer_html = models.TextField(blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
+    grade = models.FloatField(null=True, blank=True)
+    feedback = models.TextField(blank=True)
 
     class Meta:
-        ordering = ['-submitted_at']  # ✅ علشان الأحدث يظهر أولًا (لو حبيتِ في الواجهة)
+        ordering = ['-submitted_at']
