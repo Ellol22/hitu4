@@ -39,6 +39,8 @@ class StudentStructure(models.Model):
     status = models.CharField(
         max_length=20, choices=StudentStatusChoices.choices, default=StudentStatusChoices.PASSED
     )
+    failed_courses_names = models.JSONField(default=list, blank=True)
+
 
     def __str__(self):
         return f"{self.get_department_display()} - {self.get_year_display()} - {self.get_semester_display()} - {self.get_status_display()}"

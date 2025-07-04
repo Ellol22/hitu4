@@ -21,7 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Environment variables
 SECRET_KEY = os.getenv('SECRET_KEY', '9eadf54afe12de795a409fc8a0e8c950e923521100f0396c377b40de6a2c539a')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
-SITE_DOMAIN = os.getenv('SITE_DOMAIN', 'https://ws-junction-mu-null.trycloudflare.com')
+SITE_DOMAIN = os.getenv('SITE_DOMAIN', 'https://freely-participated-surgery-spine.trycloudflare.com')
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'helwanuniversity82@gmail.com')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'kxcp kryq kbut kolg')
@@ -37,7 +37,7 @@ ALLOWED_HOSTS = [
     site_hostname,
     'localhost',
     '127.0.0.1',
-    'ws-junction-mu-null.trycloudflare.com',
+    'freely-participated-surgery-spine.trycloudflare.com',
 ]
 
 # Application definition
@@ -99,8 +99,8 @@ def mobile_origin_allow_middleware(get_response):
             FRONTEND_URL,
             'http://localhost:3000',
             'http://127.0.0.1:3000',
-            'https://ws-junction-mu-null.trycloudflare.com',
-            'ws-junction-mu-null.trycloudflare.com',
+            'https://freely-participated-surgery-spine.trycloudflare.com',
+            'freely-participated-surgery-spine.trycloudflare.com',
         ]
 
         if method == 'OPTIONS':
@@ -143,7 +143,7 @@ CORS_ALLOWED_ORIGINS = [
     FRONTEND_URL,
     'http://localhost:3000',
     'http://127.0.0.1:3000',
-    'https://ws-junction-mu-null.trycloudflare.com',
+    'https://freely-participated-surgery-spine.trycloudflare.com',
 ]
 
 CORS_ALLOW_HEADERS = list(default_headers) + [
@@ -177,7 +177,7 @@ CSRF_TRUSTED_ORIGINS = [
     FRONTEND_URL,
     'http://localhost:3000',
     'http://127.0.0.1:3000',
-    'https://ws-junction-mu-null.trycloudflare.com',
+    'https://freely-participated-surgery-spine.trycloudflare.com',
 ]
 
 # Security settings

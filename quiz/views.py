@@ -393,7 +393,7 @@ def student_assignments(request):
     now = timezone.now()
 
     # Get IDs of student’s courses
-    student_courses_ids = Course.objects.filter(stucourses__student=student).values_list('id', flat=True)
+    student_courses_ids = StudentCourse.objects.filter(student=student).values_list('course_id', flat=True)
 
     # Get only assignments that:
     # - are in the student's courses
@@ -401,9 +401,9 @@ def student_assignments(request):
     # - AND the deadline has not passed
     assignments = Assignment.objects.filter(
         course_id__in=student_courses_ids,
-        assigned_to=student,
-        deadline__gt=now  # ده السطر المهم
+        deadline__gt=now
     )
+
 
     assignment_data = []
     for assignment in assignments:
@@ -664,23 +664,57 @@ def my_quiz_submission(request, quiz_id):
         return Response(serializer.data)
     except QuizSubmission.DoesNotExist:
         return Response({"status": "No submission"})
+    
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def my_task_submission(request, task_id):
     if not is_student(request.user):
-        return Response({"detail": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+        data = {"detail": "Only students can access this endpoint."}
+        print("📤 Response:", data)
+        return Response(data, status=status.HTTP_403_FORBIDDEN)
 
     try:
         assignment = Assignment.objects.get(id=task_id)
-        if not is_enrolled_in_course(request.user, assignment.course) or request.user.student not in assignment.assigned_to.all():
-            return Response({"detail": "You are not authorized for this assignment."}, status=status.HTTP_403_FORBIDDEN)
+        if not is_enrolled_in_course(request.user, assignment.course):
+            data = {"detail": "You are not authorized for this assignment."}
+            print("📤 Response:", data)
+            return Response(data, status=status.HTTP_403_FORBIDDEN)
     except Assignment.DoesNotExist:
-        return Response({"detail": "Assignment not found."}, status=status.HTTP_404_NOT_FOUND)
+        data = {"detail": "Assignment not found."}
+        print("📤 Response:", data)
+        return Response(data, status=status.HTTP_404_NOT_FOUND)
+
+    # 🧠 Get the assignment file (if exists)
+    file_obj = assignment.files.first()
+    file_url = request.build_absolute_uri(file_obj.file.url) if file_obj else None
+
+    # 🧾 Build assignment info
+    assignment_data = {
+        "id": assignment.id,
+        "title": assignment.title,
+        "description": assignment.description,
+        "course": {
+            "id": assignment.course.id,
+            "code": assignment.course.id,
+            "name": assignment.course.name
+        },
+        "deadline": assignment.deadline,
+        "pdf_file": file_url,
+    }
 
     try:
         submission = Submission.objects.get(assignment=assignment, student=request.user.student)
-        serializer = SubmissionSerializer(submission)
-        return Response(serializer.data)
+        submission_data = SubmissionSerializer(submission).data
+        response = {
+            "assignment": assignment_data,
+            "submission": submission_data
+        }
     except Submission.DoesNotExist:
-        return Response({"status": "No submission"})
+        response = {
+            "assignment": assignment_data,
+            "submission": None
+        }
+
+    print("📤 Final Response:", json.dumps(response, indent=4, ensure_ascii=False, default=str))
+    return Response(response)

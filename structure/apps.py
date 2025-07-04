@@ -29,7 +29,7 @@ class StructureConfig(AppConfig):
 
             for student in students:
                 try:
-                    structure = StudentStructure.objects.get(student=student)
+                    structure = student.structure
                 except StudentStructure.DoesNotExist:
                     print(f"[CRON READY] StudentStructure not found for student {student.user.username}, skipping.")
                     continue

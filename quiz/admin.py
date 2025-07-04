@@ -5,7 +5,7 @@ class QuizQuestionInline(admin.TabularInline):
     model = QuizQuestion
     extra = 1
     fields = ('text', 'options', 'correct_option')
-    readonly_fields = ('options',)  # JSONField can be complex to edit directly
+    readonly_fields = ('options',)
 
 @admin.register(Quiz)
 class QuizAdmin(admin.ModelAdmin):
@@ -13,9 +13,8 @@ class QuizAdmin(admin.ModelAdmin):
     list_filter = ('course', 'created_by', 'start_time')
     search_fields = ('title', 'course__name')
     inlines = [QuizQuestionInline]
-    raw_id_fields = ('course', 'created_by')  # ← بعد التعديل
+    raw_id_fields = ('course', 'created_by')
     date_hierarchy = 'start_time'
-
 
 @admin.register(QuizQuestion)
 class QuizQuestionAdmin(admin.ModelAdmin):
@@ -34,7 +33,7 @@ class QuizSubmissionAdmin(admin.ModelAdmin):
     list_filter = ('quiz', 'status')
     search_fields = ('student__user__username', 'quiz__title')
     raw_id_fields = ('student', 'quiz')
-    readonly_fields = ('answers', 'submitted_at')  # JSONField and timestamp shouldn't be edited
+    readonly_fields = ('answers', 'submitted_at')
     date_hierarchy = 'submitted_at'
 
     def feedback_preview(self, obj):
@@ -53,7 +52,7 @@ class AssignmentAdmin(admin.ModelAdmin):
     list_filter = ('course', 'created_by', 'deadline')
     search_fields = ('title', 'course__name')
     inlines = [AssignmentFileInline]
-    raw_id_fields = ('course', 'created_by', 'assigned_to')
+    raw_id_fields = ('course', 'created_by')  # ✅ شيلنا assigned_to
     date_hierarchy = 'deadline'
 
 @admin.register(AssignmentFile)

@@ -2,9 +2,9 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from accounts.models import Student
 from courses.models import Course, StudentCourse
-from structure.models import AcademicYearChoices, SemesterChoices, StudentStructure
+from structure.models import StudentStatusChoices, StudentStructure
 
-# ترتيب سنوات الدراسة عشان نقدر نستخدمه للمقارنة
+# ترتيب السنوات علشان نقدر نقارن
 year_order = {
     'First': 1,
     'Second': 2,
@@ -12,7 +12,6 @@ year_order = {
     'Fourth': 4,
 }
 
-# ترتيب الترم عشان نقدر نقارن
 semester_order = {
     'First': 1,
     'Second': 2,
@@ -25,30 +24,44 @@ def auto_assign_courses_to_student(sender, instance, **kwargs):
     if not student.structure:
         return
 
-    # جلب الهيكل الحالي
-    current_year = student.structure.year
-    current_semester = student.structure.semester
+    structure = student.structure
+    status = structure.status
 
-    # تحديد كل سنوات الدراسة والترمات اللي أقل أو تساوي الهيكل الحالي
-    valid_structures = []
+    # امسح أي مواد قديمة مرتبطة بالطالب
+    StudentCourse.objects.filter(student=student).delete()
+
+    # 🧠: أولًا نرجع كل المواد من السنين اللي فاتت (أقل من السنة الحالية)
+    previous_structures = []
     for year, y_val in year_order.items():
         for sem, s_val in semester_order.items():
-            # اذا السنة اقل من السنة الحالية
-            if y_val < year_order[current_year]:
-                valid_structures.append((year, sem))
-            # اذا السنة تساوي السنة الحالية والسمستر اقل او يساوي الحالي
-            elif y_val == year_order[current_year] and s_val <= semester_order[current_semester]:
-                valid_structures.append((year, sem))
+            if y_val < year_order[structure.year]:
+                previous_structures.append((year, sem))
+            elif y_val == year_order[structure.year] and s_val < semester_order[structure.semester]:
+                previous_structures.append((year, sem))
 
-    # جلب المواد لكل الهيكل اللي حددناه
-    matched_courses = Course.objects.filter(
-        structure__in=[
-            StudentStructure.objects.get(year=year, semester=sem, department=student.structure.department)
-            for year, sem in valid_structures
-        ]
+    past_structures = StudentStructure.objects.filter(
+        department=structure.department,
+        year__in=[y for y, _ in previous_structures],
+        semester__in=[s for _, s in previous_structures]
     )
 
-    # إضافة المواد الجديدة التي لم تُربط بعد مع الطالب
-    for course in matched_courses:
-        if not StudentCourse.objects.filter(student=student, course=course).exists():
-            StudentCourse.objects.create(student=student, course=course)
+    courses = list(Course.objects.filter(structure__in=past_structures))
+
+    # 🧠: بعد كدا نضيف مواد الترم الحالي بناءً على حالة الطالب
+    if status == StudentStatusChoices.PASSED:
+        # لو ناجح → ياخد مواد الترم الحالي بالكامل
+        current_courses = Course.objects.filter(structure=structure)
+        courses += list(current_courses)
+
+    elif status in [StudentStatusChoices.SUMMER, StudentStatusChoices.RETAKE_YEAR]:
+        # لو summer أو retake → ياخد المواد اللي سقط فيها فقط
+        failed_course_names = structure.failed_courses_names or []
+        current_failed_courses = Course.objects.filter(
+            structure=structure,
+            name__in=failed_course_names
+        )
+        courses += list(current_failed_courses)
+
+    # أضف المواد للطالب
+    for course in courses:
+        StudentCourse.objects.get_or_create(student=student, course=course)

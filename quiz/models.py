@@ -1,7 +1,6 @@
 from django.db import models
 from accounts.models import Doctor, Student
 from courses.models import Course
-from django.contrib.auth.models import User
 
 class Quiz(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='quizzes')
@@ -53,7 +52,6 @@ class Assignment(models.Model):
     description = models.TextField(blank=True)
     deadline = models.DateTimeField()
     created_by = models.ForeignKey(Doctor, on_delete=models.SET_NULL, null=True, related_name='created_assignments')
-    assigned_to = models.ManyToManyField(Student, related_name='assigned_assignments')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

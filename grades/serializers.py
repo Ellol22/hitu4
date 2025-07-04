@@ -15,6 +15,7 @@ class StudentGradeSerializer(serializers.ModelSerializer):
 
     # بيانات الطالب
     student_name = serializers.SerializerMethodField()
+    student_id = serializers.SerializerMethodField()  # ← رقم الجلوس الجديد
 
     # درجات محسوبة (غير قابلة للتعديل)
     progress = serializers.SerializerMethodField()
@@ -28,6 +29,7 @@ class StudentGradeSerializer(serializers.ModelSerializer):
         model = StudentGrade
         fields = [
             'student_name',
+            'student_id',  # ← أضف هنا
             'subjectName',
             'department',
             'year',
@@ -49,6 +51,7 @@ class StudentGradeSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'student_name',
+            'student_id',  # ← أضف هنا كمان
             'subjectName',
             'department',
             'year',
@@ -67,6 +70,9 @@ class StudentGradeSerializer(serializers.ModelSerializer):
 
     def get_student_name(self, obj):
         return obj.student.user.get_full_name() if obj.student and obj.student.user else ""
+
+    def get_student_id(self, obj):
+        return obj.student.student_id if obj.student else None
 
     def get_progress(self, obj):
         return int(obj.percentage) if obj.percentage is not None else 0

@@ -13,7 +13,7 @@ from structure.models import (
     AcademicYearChoices,
     SemesterChoices,
 )
-from courses.models import StudentCourse  # موديل يربط الطالب بالمواد، لتحديث المواد تلقائيًا
+from courses.models import StudentCourse  # موديل يربط الطالب بالمواد
 
 
 # --- مساعدات لترقية السنة والسمستر ---
@@ -28,15 +28,14 @@ def next_year(current_year):
         AcademicYearChoices.FIRST: AcademicYearChoices.SECOND,
         AcademicYearChoices.SECOND: AcademicYearChoices.THIRD,
         AcademicYearChoices.THIRD: AcademicYearChoices.FOURTH,
-        AcademicYearChoices.FOURTH: AcademicYearChoices.FOURTH,  # آخر سنة تظل كما هي
+        AcademicYearChoices.FOURTH: AcademicYearChoices.FOURTH,
     }
     return mapping.get(current_year, AcademicYearChoices.FIRST)
 
 
 # --- دالة لتحديد الترم الحالي للطالب بناءً على تاريخ التسجيل ---
 def determine_current_semester_by_registration(student: Student):
-    registration_date = student.user.date_joined.date()  # افتراض أن هذا تاريخ تسجيل الحساب
-
+    registration_date = student.user.date_joined.date()
     year = registration_date.year
     start_second_semester = datetime(year, 2, 1).date()
     start_third_semester = datetime(year, 7, 1).date()
@@ -47,13 +46,10 @@ def determine_current_semester_by_registration(student: Student):
         return SemesterChoices.FIRST
 
 
-# --- دالة تحديث مواد الطالب عند ترحيلها للسنة الجديدة ---
+# --- دالة تحديث مواد الطالب عند ترحيله ---
 def transfer_failed_courses_to_new_year(student: Student, failed_courses):
-    """
-    تضيف المواد الساقطة إلى ترم السنة الجديدة ترم أول
-    """
     try:
-        structure = StudentStructure.objects.get(student=student)
+        structure = student.structure
     except StudentStructure.DoesNotExist:
         return {"error": "StudentStructure not found"}
 
@@ -61,15 +57,12 @@ def transfer_failed_courses_to_new_year(student: Student, failed_courses):
     new_semester = SemesterChoices.FIRST
 
     for course in failed_courses:
-        # إضافة المادة للطالب في السنة الجديدة ترم أول
-        # هذا يعتمد على موديل StudentCourse الذي يربط الطالب بالمواد
         StudentCourse.objects.update_or_create(
             student=student,
             course=course,
             defaults={"year": new_year, "semester": new_semester},
         )
 
-    # تحديث الهيكل الأكاديمي للطالب للسنة الجديدة ترم أول
     structure.year = new_year
     structure.semester = new_semester
     structure.save()
@@ -77,7 +70,7 @@ def transfer_failed_courses_to_new_year(student: Student, failed_courses):
     return {"message": "Failed courses transferred to new academic year semester 1"}
 
 
-# --- دالة لفحص نتائج السمر بعد انتهاء الامتحانات ---
+# --- فحص نتائج السمر ---
 def check_summer_results(student: Student):
     summer_failed_courses = []
     summer_passed_courses = []
@@ -96,10 +89,10 @@ def check_summer_results(student: Student):
     return len(summer_passed_courses), len(summer_failed_courses), summer_failed_courses
 
 
-# --- الدالة الأساسية لتحديث حالة الطالب حسب المواد الساقطة قبل السمر ---
+# --- تحديث حالة الطالب قبل السمر ---
 def update_student_structure(student: Student):
     try:
-        structure = StudentStructure.objects.get(student=student)
+        structure = student.structure
     except StudentStructure.DoesNotExist:
         return {"error": "StudentStructure not found for student " + student.user.username}
 
@@ -114,9 +107,11 @@ def update_student_structure(student: Student):
             failed_courses.append(grade.grade_sheet.course)
 
     failed_count = len(failed_courses)
+    structure.failed_courses_names = [c.name for c in failed_courses]
 
     if failed_count == 0:
         structure.status = StudentStatusChoices.PASSED
+        structure.failed_courses_names = []
         structure.save()
         return {
             "student": student.user.username,
@@ -125,43 +120,44 @@ def update_student_structure(student: Student):
             "note": "Student passed all subjects.",
         }
 
+    structure.save()
+
     if failed_count < 3:
         structure.status = StudentStatusChoices.SUMMER
         structure.save()
         return {
             "student": student.user.username,
             "status": structure.status,
-            "failed_courses": [c.name for c in failed_courses],
+            "failed_courses": structure.failed_courses_names,
             "year": structure.year,
             "semester": structure.semester,
             "note": "Student entered summer course for failed subjects.",
         }
 
-    # 3 مواد أو أكثر سقط فيهم
     structure.status = StudentStatusChoices.SUMMER
     structure.save()
     return {
         "student": student.user.username,
         "status": structure.status,
-        "failed_courses": [c.name for c in failed_courses],
+        "failed_courses": structure.failed_courses_names,
         "year": structure.year,
         "semester": structure.semester,
         "note": "Student entered summer course for many failed subjects, waiting for summer results.",
     }
 
 
-# --- دالة لتقييم نتائج السمر بعد انتهاء فترة السمر ---
+# --- التقييم النهائي بعد السمر ---
 def finalize_after_summer(student: Student):
     try:
-        structure = StudentStructure.objects.get(student=student)
+        structure = student.structure
     except StudentStructure.DoesNotExist:
         return {"error": "StudentStructure not found for student " + student.user.username}
 
     num_passed, num_failed, failed_courses_after_summer = check_summer_results(student)
 
     if num_failed == 0:
-        # نجح في كل مواد السمر → ترقي سنة أو ترم
         structure.status = StudentStatusChoices.PASSED
+        structure.failed_courses_names = []
         if structure.semester == SemesterChoices.FIRST:
             structure.semester = SemesterChoices.SECOND
         else:
@@ -171,30 +167,31 @@ def finalize_after_summer(student: Student):
         return {"message": "Student passed all summer courses and progressed.", "status": structure.status}
 
     if num_failed < 3:
-        # ترحيل المواد الساقطة للسنة الجديدة ترم أول مع تحديث المواد
         structure.status = StudentStatusChoices.PASSED
+        structure.failed_courses_names = [c.name for c in failed_courses_after_summer]
+        structure.save()
         result = transfer_failed_courses_to_new_year(student, failed_courses_after_summer)
         return {
             "message": "Student failed some summer courses but less than 3. Materials moved to new academic year semester 1.",
-            "failed_courses": [c.name for c in failed_courses_after_summer],
+            "failed_courses": structure.failed_courses_names,
             "status": structure.status,
             "year": structure.year,
             "semester": structure.semester,
             "transfer_result": result,
         }
 
-    # سقط في 3 مواد أو أكثر في السمر → يعيد السنة على المواد الساقطة
     if num_failed >= 3:
         structure.status = StudentStatusChoices.RETAKE_YEAR
+        structure.failed_courses_names = [c.name for c in failed_courses_after_summer]
         structure.save()
         return {
             "message": "Student failed 3 or more summer courses and must retake the year.",
-            "failed_courses": [c.name for c in failed_courses_after_summer],
+            "failed_courses": structure.failed_courses_names,
             "status": structure.status,
         }
 
 
-# --- إضافة تحديد الترم عند إنشاء حساب الطالب (مثال) ---
+# --- عند تسجيل الطالب لأول مرة ---
 def create_student_structure_on_registration(student: Student):
     semester = determine_current_semester_by_registration(student)
     structure, created = StudentStructure.objects.get_or_create(
@@ -208,11 +205,10 @@ def create_student_structure_on_registration(student: Student):
     return structure
 
 
-# --- جزء الـ CRON أو التحديث التلقائي حسب التاريخ ---
+# --- CRON التلقائي حسب التاريخ ---
 from django.apps import AppConfig
 from django.utils import timezone
 import datetime
-
 
 class StructureConfig(AppConfig):
     name = "structure"
@@ -225,8 +221,6 @@ class StructureConfig(AppConfig):
         )
 
         today = timezone.now().date()
-
-        # التواريخ اللي فيها ترقية تلقائية
         run_dates = {
             datetime.date(today.year, 2, 1): "first_semester",
             datetime.date(today.year, 7, 1): "second_semester",

@@ -13,11 +13,19 @@ class Student(models.Model):
     name = models.CharField(max_length=25)
     mobile = models.CharField(max_length=11, blank=True, null=True)
     national_id = models.CharField(max_length=14)
+    student_id = models.CharField(  # ✅ ده رقم الجلوس
+        max_length=10,
+        unique=True,
+        null=True,  # عشان الطلبة القديمة اللي لسه مالهمش رقم جلوس
+        blank=True,
+        db_index=True
+        )
     sec_num = models.IntegerField(null=True, blank=True)
     structure = models.ForeignKey(StudentStructure, on_delete=models.SET_NULL, null=True, blank=True, related_name="student_structure")
 
     def __str__(self):
-        return self.name
+        return f"{self.name} ({self.student_id or self.pk})"
+
 
     def get_my_courses(self):
         from courses.models import Course

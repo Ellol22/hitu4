@@ -1,3 +1,4 @@
+import json
 import logging
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -29,163 +30,207 @@ def validate_email_format(email):
         return False
 
 User = get_user_model()
+import json
+import traceback
+import logging
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth.password_validation import validate_password, ValidationError
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.core.mail import send_mail
+from django.conf import settings
+from accounts.models import User, Student, Doctor, DoctorRole
+
+logger = logging.getLogger(__name__)
 
 @csrf_exempt
 @api_view(['POST'])
 def api_sign_up(request):
-    data = request.data
-    logger.debug("Signup request data: %s", data)
-
-    username = data.get('username')
-    password = data.get('password')
-    user_type = data.get('userType')
-    national_id = data.get('nationalId')
-    email = data.get('email')
-    name = data.get('fullname')
-    mobile = data.get('mobile', '')
-    sec_num = data.get('sec_num', None)
-    role = data.get('role', 'subject_doctor')
-
-    if not all([username, password, user_type, national_id, email, name]):
-        logger.error("Missing required fields")
-        return Response({'error': 'All required fields (username, password, userType, nationalId, email, fullname) must be provided.'}, status=status.HTTP_400_BAD_REQUEST)
-
-    if not validate_email_format(email):
-        logger.error("Invalid email format: %s", email)
-        return Response({'error': 'Invalid email format.'}, status=status.HTTP_400_BAD_REQUEST)
-
     try:
-        validate_password(password)
-    except ValidationError as e:
-        logger.error("Password validation error: %s", e.messages)
-        return Response({'error': e.messages}, status=status.HTTP_400_BAD_REQUEST)
-
-    if User.objects.filter(username=username).exists():
-        logger.error("Username already taken: %s", username)
-        return Response({'error': 'Username is already taken.'}, status=status.HTTP_400_BAD_REQUEST)
-
-    if user_type == 'Student':
         try:
-            student = Student.objects.get(national_id=national_id)
-            if student.user:
-                logger.error("Student with national ID %s already linked to user", national_id)
-                return Response({'error': 'This national ID is already registered with a Student account.'}, status=status.HTTP_400_BAD_REQUEST)
+            logger.info("🔵 Incoming SIGNUP request data:\n%s", json.dumps(request.data, indent=2))
+        except Exception:
+            logger.warning("❗ Could not parse request.data as JSON:\n%s", str(request.data))
 
-            user = User.objects.create_user(username=username, password=password, email=email, first_name=name)
-            user.is_active = False
-            user.save()
-            logger.info("Created user account for student %s", username)
+        data = request.data
 
-            student.user = user
-            if mobile:
-                student.mobile = mobile
-            if sec_num is not None:
-                try:
-                    student.sec_num = int(sec_num)
-                except ValueError:
-                    logger.error("sec_num is not an integer: %s", sec_num)
-                    return Response({'error': 'sec_num must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
+        username = data.get('username')
+        password = data.get('password')
+        user_type = data.get('user_type')
+        national_id = data.get('national_id')
+        email = data.get('email')
+        name = data.get('fullname')
+        mobile = data.get('mobile', '')
+        sec_num = data.get('sec_num', None)
+        role = data.get('staff_role', 'subject_doctor')
 
-            student.save()
-            logger.info("Linked user to student with national ID %s", national_id)
+        if not all([username, password, user_type, national_id, email, name]):
+            logger.error("❌ Missing required fields")
+            response_data = {
+                'error': 'All required fields (username, password, userType, nationalId, email, fullname) must be provided.'
+            }
+            logger.info("🔴 Signup response:\n%s", response_data)
+            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            token = default_token_generator.make_token(user)
-            activation_link = f"{settings.FRONTEND_URL}/activate/{uid}/{token}/"
-            logger.debug("Activation link: %s", activation_link)
+        if not validate_email_format(email):
+            logger.error("❌ Invalid email format: %s", email)
+            response_data = {'error': 'Invalid email format.'}
+            logger.info("🔴 Signup response:\n%s", response_data)
+            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
-            send_mail(
-                subject="Activate your account ✉",
-                message=(
-                    f"Hello {user.username},\n\n"
-                    f"Your account has been created successfully.\n"
-                    f"Username: {username}\n"
-                    f"Password: {password}\n\n"
-                    f"⚠ You will not be able to log in until you activate your account.\n"
-                    f"Please click the link below to activate:\n{activation_link}\n\n"
-                    f"If you did not request this, please ignore this message."
-                    f"Thank you,\n"
-                    f"Faculty of Industrial and Energy Technology, \nHelwan International Technological University"
-                ),
-                from_email=settings.EMAIL_HOST_USER,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
-
-            logger.info("Sent activation email to %s", user.email)
-
-            return Response({'message': 'Student account created successfully. Please check your email to activate.'}, status=status.HTTP_201_CREATED)
-
-        except Student.DoesNotExist:
-            logger.error("Student with national ID %s not found", national_id)
-            return Response({'error': 'National ID not found in the student database.'}, status=status.HTTP_404_NOT_FOUND)
-
-    elif user_type == 'Staff':
         try:
-            doctor = Doctor.objects.get(national_id=national_id)
-            if doctor.user:
-                logger.error("Doctor with national ID %s already linked to user", national_id)
-                return Response({'error': 'This national ID is already registered with a Doctor account.'}, status=status.HTTP_400_BAD_REQUEST)
+            validate_password(password)
+        except ValidationError as e:
+            logger.error("❌ Password validation error: %s", e.messages)
+            response_data = {'error': e.messages}
+            logger.info("🔴 Signup response:\n%s", response_data)
+            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
-            if role not in dict(DoctorRole.choices):
-                logger.warning("Invalid role '%s' received, defaulting to 'subject_doctor'", role)
-                role = 'subject_doctor'
+        if User.objects.filter(username=username).exists():
+            logger.error("❌ Username already exists: %s", username)
+            response_data = {'error': 'Username is already taken.'}
+            logger.info("🔴 Signup response:\n%s", response_data)
+            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
-            if role == DoctorRole.ADMIN_DOCTOR and (not request.user.is_authenticated or not request.user.is_superuser):
-                logger.error("Unauthorized attempt to create admin_doctor by user %s", request.user.username if request.user.is_authenticated else "anonymous")
-                return Response({'error': 'Only admins can create admin doctor accounts.'}, status=status.HTTP_403_FORBIDDEN)
+        if user_type == 'student':
+            try:
+                student = Student.objects.get(national_id=national_id)
+                if student.user:
+                    logger.error("❌ Student already linked to user: %s", national_id)
+                    response_data = {'error': 'This national ID is already registered with a Student account.'}
+                    logger.info("🔴 Signup response:\n%s", response_data)
+                    return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
-            user = User.objects.create_user(username=username, password=password, email=email, first_name=name)
-            if role == DoctorRole.ADMIN_DOCTOR:
-                user.is_staff = True
-                user.is_superuser = True
-                logger.info("Assigned admin privileges to ADMIN_DOCTOR for user %s", username)
+                user = User.objects.create_user(username=username, password=password, email=email, first_name=name)
+                user.is_active = False
+                user.save()
+                logger.info("✅ Created user for student: %s", username)
 
-            user.is_active = False
-            user.save()
-            logger.info("Created user account for doctor %s", username)
+                student.user = user
+                student.mobile = mobile or student.mobile
+                if sec_num is not None:
+                    try:
+                        student.sec_num = int(sec_num)
+                    except ValueError:
+                        logger.error("❌ sec_num is not an integer: %s", sec_num)
+                        response_data = {'error': 'sec_num must be an integer.'}
+                        logger.info("🔴 Signup response:\n%s", response_data)
+                        return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
-            doctor.user = user
-            doctor.role = role
-            if mobile:
-                doctor.mobile = mobile
-            doctor.save()
-            logger.info("Linked user to doctor with national ID %s", national_id)
+                student.save()
+                logger.info("✅ Linked student to user: %s", national_id)
 
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            token = default_token_generator.make_token(user)
-            activation_link = f"{settings.FRONTEND_URL}/activate/{uid}/{token}/"
-            logger.debug("Activation link: %s", activation_link)
+                uid = urlsafe_base64_encode(force_bytes(user.pk))
+                token = default_token_generator.make_token(user)
+                activation_link = f"{settings.SITE_DOMAIN}/accounts/activate/{uid}/{token}/"
+                logger.info("📧 Activation link: %s", activation_link)
 
-            send_mail(
-                subject="Activate your account ✉",
-                message=(
-                    f"Hello {user.username},\n\n"
-                    f"Your account has been created successfully.\n"
-                    f"Username: {username}\n"
-                    f"Password: {password}\n\n"
-                    f"⚠ You will not be able to log in until you activate your account.\n"
-                    f"Please click the link below to activate:\n{activation_link}\n\n"
-                    f"If you did not request this, please ignore this message."
-                    f"Thank you,\n"
-                    f"Faculty of Industrial and Energy Technology, \nHelwan International Technological University"
-                ),
-                from_email=settings.EMAIL_HOST_USER,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
-            logger.info("Sent activation email to %s", user.email)
+                send_mail(
+                    subject="Activate your account ✉",
+                    message=(
+                        f"Hello {user.username},\n\n"
+                        f"Your account has been created.\n"
+                        f"Username: {username}\n"
+                        f"Password: {password}\n\n"
+                        f"⚠ Please activate your account:\n{activation_link}\n\n"
+                        f"Thank you."
+                    ),
+                    from_email=settings.EMAIL_HOST_USER,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+                logger.info("📨 Activation email sent to: %s", user.email)
 
-            return Response({'message': 'Doctor account created successfully. Please check your email to activate.'}, status=status.HTTP_201_CREATED)
+                response_data = {'message': 'Student account created successfully. Check your email to activate.'}
+                logger.info("🟢 Signup response:\n%s", response_data)
+                return Response(response_data, status=status.HTTP_201_CREATED)
 
-        except Doctor.DoesNotExist:
-            logger.error("Doctor with national ID %s not found", national_id)
-            return Response({'error': 'National ID not found in the doctor database.'}, status=status.HTTP_404_NOT_FOUND)
+            except Student.DoesNotExist:
+                logger.error("❌ Student not found with national ID: %s", national_id)
+                response_data = {'error': 'National ID not found in the student database.'}
+                logger.info("🔴 Signup response:\n%s", response_data)
+                return Response(response_data, status=status.HTTP_404_NOT_FOUND)
 
-    else:
-        logger.error("Invalid userType received: %s", user_type)
-        return Response({'error': 'Invalid userType. Must be "Student" or "Staff".'}, status=status.HTTP_400_BAD_REQUEST)
+        elif user_type == 'staff':
+            try:
+                doctor = Doctor.objects.get(national_id=national_id)
+                if doctor.user:
+                    logger.error("❌ Doctor already linked to user: %s", national_id)
+                    response_data = {'error': 'This national ID is already registered with a Doctor account.'}
+                    logger.info("🔴 Signup response:\n%s", response_data)
+                    return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
+                if role not in dict(DoctorRole.choices):
+                    logger.warning("⚠ Invalid role: %s. Defaulting to 'subject_doctor'", role)
+                    role = 'subject_doctor'
+
+                if role == DoctorRole.ADMIN_DOCTOR and (not request.user.is_authenticated or not request.user.is_superuser):
+                    logger.error("❌ Unauthorized to create admin_doctor. User: %s", request.user)
+                    response_data = {'error': 'Only admins can create admin doctor accounts.'}
+                    logger.info("🔴 Signup response:\n%s", response_data)
+                    return Response(response_data, status=status.HTTP_403_FORBIDDEN)
+
+                user = User.objects.create_user(username=username, password=password, email=email, first_name=name)
+                if role == DoctorRole.ADMIN_DOCTOR:
+                    user.is_staff = True
+                    user.is_superuser = True
+
+                user.is_active = False
+                user.save()
+                logger.info("✅ Created user for doctor: %s", username)
+
+                doctor.user = user
+                doctor.role = role
+                doctor.mobile = mobile or doctor.mobile
+                doctor.save()
+                logger.info("✅ Linked doctor to user: %s", national_id)
+
+                uid = urlsafe_base64_encode(force_bytes(user.pk))
+                token = default_token_generator.make_token(user)
+                activation_link = f"{settings.SITE_DOMAIN}/accounts/activate/{uid}/{token}/"
+                logger.info("📧 Activation link: %s", activation_link)
+
+                send_mail(
+                    subject="Activate your account ✉",
+                    message=(
+                        f"Hello {user.username},\n\n"
+                        f"Your account has been created.\n"
+                        f"Username: {username}\n"
+                        f"Password: {password}\n\n"
+                        f"⚠ Please activate your account:\n{activation_link}\n\n"
+                        f"Thank you."
+                    ),
+                    from_email=settings.EMAIL_HOST_USER,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+                logger.info("📨 Activation email sent to: %s", user.email)
+
+                response_data = {'message': 'Doctor account created successfully. Check your email to activate.'}
+                logger.info("🟢 Signup response:\n%s", response_data)
+                return Response(response_data, status=status.HTTP_201_CREATED)
+
+            except Doctor.DoesNotExist:
+                logger.error("❌ Doctor not found with national ID: %s", national_id)
+                response_data = {'error': 'National ID not found in the doctor database.'}
+                logger.info("🔴 Signup response:\n%s", response_data)
+                return Response(response_data, status=status.HTTP_404_NOT_FOUND)
+
+        else:
+            logger.error("❌ Invalid userType: %s", user_type)
+            response_data = {'error': 'Invalid userType. Must be \"Student\" or \"Staff\".'}
+            logger.info("🔴 Signup response:\n%s", response_data)
+            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+
+    except Exception as e:
+        logger.exception("💥 Unhandled exception in signup:\n%s", traceback.format_exc())
+        response_data = {'error': 'Something went wrong. Please try again later.'}
+        logger.info("🔴 Signup response:\n%s", response_data)
+        return Response(response_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 

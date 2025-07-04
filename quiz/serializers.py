@@ -17,12 +17,9 @@ class QuizQuestionSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-
-        # لو الطالب هو اللي بيطلب الداتا، امسح correct_option
         request = self.context.get('request')
         if request and hasattr(request.user, 'student'):
-            rep.pop('correct_option', None)  # Remove it from the response
-
+            rep.pop('correct_option', None)
         return rep
 
     def validate_options(self, value):
@@ -68,7 +65,6 @@ class QuizSerializer(serializers.ModelSerializer):
             if submission:
                 return submission.status
             else:
-                # لو الوقت خلص ولسه ماعملش سبميشن
                 if timezone.now() > obj.end_time:
                     return 'ended'
                 return 'not_started'
@@ -81,7 +77,6 @@ class QuizSerializer(serializers.ModelSerializer):
             if submission and submission.grade is not None:
                 return submission.grade
         return None
-
 
     def validate(self, data):
         start_time = data.get('start_time') or (self.instance and self.instance.start_time)
@@ -145,7 +140,6 @@ class QuizSerializer(serializers.ModelSerializer):
         return instance
 
 
-
 # ----------------------------
 # Assignment File Serializer
 # ----------------------------
@@ -161,6 +155,7 @@ class AssignmentFileSerializer(serializers.ModelSerializer):
         ret['file_url'] = instance.file.url
         return ret
 
+
 # ----------------------------
 # Assignment Serializer
 # ----------------------------
@@ -174,13 +169,6 @@ class AssignmentSerializer(serializers.ModelSerializer):
     )
     course_name = serializers.CharField(source='course.name', read_only=True)
 
-    assigned_to_ids = serializers.PrimaryKeyRelatedField(
-        queryset=Student.objects.all(),
-        many=True,
-        source='assigned_to',
-        write_only=True
-    )
-
     pdf_file = serializers.ListField(
         child=serializers.FileField(),
         write_only=True,
@@ -192,30 +180,21 @@ class AssignmentSerializer(serializers.ModelSerializer):
         model = Assignment
         fields = [
             'id', 'course_id', 'course_name', 'title', 'description',
-            'deadline', 'assigned_to_ids', 'files', 'pdf_file',
+            'deadline', 'files', 'pdf_file',
             'created_at', 'updated_at'
         ]
 
-
     def validate(self, data):
-        print("== Serializer Validate ==")
-        print(data)
         deadline = data.get('deadline')
         if deadline and deadline <= timezone.now():
             raise serializers.ValidationError("Deadline must be in the future.")
         return data
 
     def create(self, validated_data):
-        print("== Serializer Create ==")
-        print(f"Validated Data: {validated_data}")
-        
-        files_data = self.context['request'].FILES.getlist('pdf_file')  # لأنك عامل source='uploaded_files'
-        
-        # شيل uploaded_files من الداتا
+        files_data = self.context['request'].FILES.getlist('pdf_file')
         validated_data.pop('uploaded_files', None)
 
         course = validated_data.pop('course')
-        assigned_to = validated_data.pop('assigned_to')
 
         if not hasattr(self.context['request'].user, 'doctor'):
             raise serializers.ValidationError("Only doctors can create assignments.")
@@ -225,24 +204,18 @@ class AssignmentSerializer(serializers.ModelSerializer):
             created_by=self.context['request'].user.doctor,
             **validated_data
         )
-        assignment.assigned_to.set(assigned_to)
 
         for file in files_data:
             AssignmentFile.objects.create(assignment=assignment, file=file)
 
         return assignment
 
-
-
     def update(self, instance, validated_data):
         files_data = self.context['request'].FILES.getlist('uploaded_files')
         course = validated_data.pop('course', None)
-        assigned_to = validated_data.pop('assigned_to', None)
 
         if course:
             instance.course = course
-        if assigned_to is not None:
-            instance.assigned_to.set(assigned_to)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -255,6 +228,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
 
         return instance
 
+
 # ----------------------------
 # Quiz Submission Serializer
 # ----------------------------
@@ -265,6 +239,7 @@ class QuizSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = QuizSubmission
         fields = ['id', 'student', 'quiz', 'answers', 'submitted_at', 'grade', 'feedback', 'status']
+
 
 # ----------------------------
 # Assignment Submission Serializer

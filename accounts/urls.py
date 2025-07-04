@@ -11,7 +11,7 @@ from .views import (
 from .serializers import CustomCookieTokenRefreshView
 
 urlpatterns = [
-    path('sign-up/', api_sign_up, name='sign_up'),
+    path('signup/', api_sign_up, name='sign_up'),
     path('login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('refresh/', CustomCookieTokenRefreshView.as_view(), name='token_refresh'),
     path('activate/<str:uidb64>/<str:token>/', activate_user, name='activate'),
